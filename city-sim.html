@@ -4245,18 +4245,6 @@ const editorState = {
       });
     }
 
-    function pointInPolygon(point, polygon) {
-      let inside = false;
-      for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-        const xi = polygon[i][0], zi = polygon[i][1];
-        const xj = polygon[j][0], zj = polygon[j][1];
-        const intersect = ((zi > point.z) !== (zj > point.z)) &&
-          (point.x < (xj - xi) * (point.z - zi) / ((zj - zi) || 1e-6) + xi);
-        if (intersect) inside = !inside;
-      }
-      return inside;
-    }
-
     function findNearestVertex(point, threshold) {
       if (!blueprintData) return null;
       const layers = ['zones', 'roads', 'coastlines'];
@@ -4288,7 +4276,7 @@ const editorState = {
         for (let idx = 0; idx < list.length; idx++) {
           const entry = list[idx];
           if (!entry.polygon) continue;
-          if (pointInPolygon(point, entry.polygon)) {
+          if (pointInPolygon(point.x, point.z, entry.polygon)) {
             return { layer, index: idx, vertexIndex: null };
           }
         }
