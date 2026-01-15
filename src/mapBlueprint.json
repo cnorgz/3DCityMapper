@@ -1,0 +1,57 @@
+{
+  "meta": {
+    "version": 1,
+    "units": "world",
+    "origin": "center"
+  },
+  "coastlines": [
+    {
+      "id": "demo-mainland",
+      "polygon": [
+        [-300, -200],
+        [300, -200],
+        [300, 200],
+        [-300, 200]
+      ]
+    }
+  ],
+  "roads": [
+    {
+      "id": "demo-road",
+      "polygon": [
+        [-60, -20],
+        [60, -20],
+        [60, 20],
+        [-60, 20]
+      ]
+    },
+    {
+      "id": "demo-rail",
+      "polyline": [
+        [-200, -150],
+        [-100, -50],
+        [0, -100],
+        [120, -30]
+      ]
+    }
+  ],
+  "zones": [
+    {
+      "id": "demo-zone-q",
+      "typeCode": "Q",
+      "polygon": [
+        [80, 40],
+        [180, 40],
+        [180, 140],
+        [80, 140]
+      ]
+    }
+  ],
+  "pois": [
+    {
+      "id": "demo-metro",
+      "type": "METRO_STATION",
+      "position": [0, 0]
+    }
+  ]
+}

@@ -340,6 +340,20 @@
       <button class="btn" id="overlayImport" style="flex: 1; padding: 6px;">Import</button>
     </div>
     <textarea id="overlayJson" placeholder="Paste calibration JSON here"></textarea>
+    <hr style="border: none; border-top: 1px solid rgba(100, 200, 255, 0.2); margin: 10px 0;" />
+    <h4 style="color: #64c8ff; font-size: 12px; margin: 8px 0 4px 0;">Debug</h4>
+    <label class="toggle-row">
+      <input type="checkbox" id="debugGrid" />
+      <span>Grid</span>
+    </label>
+    <label class="toggle-row">
+      <input type="checkbox" id="debugOverlayBounds" />
+      <span>Overlay Bounds</span>
+    </label>
+    <label class="toggle-row">
+      <input type="checkbox" id="debugBlueprintOutlines" />
+      <span>Blueprint Outlines</span>
+    </label>
   </div>
   
   <!-- Touch Controls -->
@@ -454,7 +468,8 @@ const LAYERS = {
   roads: new THREE.Group(),
   buildings: new THREE.Group(),
   props: new THREE.Group(),
-  fx: new THREE.Group()
+  fx: new THREE.Group(),
+  debug: new THREE.Group()
 };
 Object.values(LAYERS).forEach(g => scene.add(g));
 
@@ -545,6 +560,16 @@ let mapOverlayMesh = null;
 let mapCoordMapper = null;
 let probeMarker = null;
 let overlaySettings = null;
+let overlayBounds = null;
+let gridHelper = null;
+let blueprintData = null;
+let blueprintOutlineGroup = null;
+let blueprintMeshGroup = null;
+const debugSettings = {
+  showGrid: false,
+  showOverlayBounds: false,
+  showBlueprintOutlines: false
+};
 
 // Cameras
     const aspect = window.innerWidth / window.innerHeight;
@@ -630,6 +655,159 @@ let overlaySettings = null;
       if (!mapCoordMapper || !mapOverlayGroup) return null;
       const local = mapCoordMapper.pxToWorld(px, py, y);
       return mapOverlayGroup.localToWorld(local);
+    }
+
+    function resetGroup(group) {
+      if (!group) return;
+      disposeObject3D(group);
+      group.clear();
+    }
+
+    function updateDebugVisibility() {
+      const allowed = (viewMode === 'plan' || viewMode === 'fidelity');
+      if (gridHelper) gridHelper.visible = allowed && debugSettings.showGrid;
+      if (overlayBounds) overlayBounds.visible = allowed && debugSettings.showOverlayBounds;
+      if (blueprintOutlineGroup) blueprintOutlineGroup.visible = allowed && debugSettings.showBlueprintOutlines;
+      if (blueprintMeshGroup) blueprintMeshGroup.visible = allowed && debugSettings.showBlueprintOutlines;
+    }
+
+    function setupDebugHelpers() {
+      const gridSize = Math.max(MAP_WIDTH, MAP_HEIGHT);
+      gridHelper = new THREE.GridHelper(gridSize, 20, 0x3a5a7a, 0x2a3a5a);
+      gridHelper.position.y = Y.overlay + 0.02;
+      gridHelper.material.depthWrite = false;
+      LAYERS.debug.add(gridHelper);
+
+      const boundsGeometry = new THREE.PlaneGeometry(MAP_OVERLAY_WORLD_W, MAP_OVERLAY_WORLD_H);
+      boundsGeometry.rotateX(-Math.PI / 2);
+      const boundsMaterial = new THREE.LineBasicMaterial({ color: 0xffcc77, transparent: true, opacity: 0.9 });
+      boundsMaterial.depthTest = false;
+      overlayBounds = new THREE.LineSegments(new THREE.EdgesGeometry(boundsGeometry), boundsMaterial);
+      overlayBounds.position.y = Y.overlay + 0.02;
+      overlayBounds.renderOrder = 998;
+      mapOverlayGroup.add(overlayBounds);
+
+      blueprintOutlineGroup = new THREE.Group();
+      blueprintOutlineGroup.name = 'BlueprintOutlines';
+      LAYERS.debug.add(blueprintOutlineGroup);
+
+      blueprintMeshGroup = new THREE.Group();
+      blueprintMeshGroup.name = 'BlueprintMeshes';
+      LAYERS.debug.add(blueprintMeshGroup);
+    }
+
+    async function loadBlueprintData() {
+      try {
+        const res = await fetch('./src/mapBlueprint.json');
+        if (!res.ok) throw new Error(`Failed to load blueprint: ${res.status}`);
+        blueprintData = await res.json();
+        buildBlueprintFromData(blueprintData);
+      } catch (error) {
+        console.warn('Blueprint load failed:', error);
+      }
+    }
+
+    function buildBlueprintFromData(data) {
+      if (!data) return;
+      resetGroup(blueprintOutlineGroup);
+      resetGroup(blueprintMeshGroup);
+
+      const outlineMat = new THREE.LineBasicMaterial({ color: 0x77d5ff, transparent: true, opacity: 0.9 });
+      outlineMat.depthTest = false;
+      const roadOutlineMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7 });
+      roadOutlineMat.depthTest = false;
+
+      const landFillMat = new THREE.MeshBasicMaterial({
+        color: COLORS.land,
+        transparent: true,
+        opacity: 0.12,
+        depthWrite: false
+      });
+      const roadFillMat = new THREE.MeshBasicMaterial({
+        color: 0x222222,
+        transparent: true,
+        opacity: 0.2,
+        depthWrite: false
+      });
+
+      const typeColors = {
+        Q: COLORS.residential,
+        B: COLORS.office,
+        ZC: COLORS.commercial,
+        J: COLORS.garden,
+        H: COLORS.hospital,
+        R: COLORS.restaurant,
+        PO: COLORS.police,
+        PK: COLORS.parking,
+        MA: COLORS.mairie,
+        'H★': COLORS.hotel,
+        S: COLORS.stadium,
+        T: COLORS.transport,
+        D: COLORS.utilities,
+        Ci: COLORS.cinema,
+        ff: COLORS.fairground,
+        P: COLORS.port
+      };
+
+      const makeShapeMesh = (points, material, y) => {
+        if (!points || points.length < 3) return null;
+        const shape = new THREE.Shape(points.map(p => new THREE.Vector2(p[0], p[1])));
+        const geometry = new THREE.ShapeGeometry(shape);
+        geometry.rotateX(-Math.PI / 2);
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.position.y = y;
+        mesh.renderOrder = 997;
+        return mesh;
+      };
+
+      const makeOutline = (points, material, y) => {
+        if (!points || points.length < 2) return null;
+        const pts = points.map(p => new THREE.Vector3(p[0], y, p[1]));
+        const geometry = new THREE.BufferGeometry().setFromPoints(pts);
+        const line = new THREE.LineLoop(geometry, material);
+        line.renderOrder = 999;
+        return line;
+      };
+
+      (data.coastlines || []).forEach(entry => {
+        const points = entry.polygon;
+        const mesh = makeShapeMesh(points, landFillMat, Y.land + 0.02);
+        if (mesh) blueprintMeshGroup.add(mesh);
+        const outline = makeOutline(points, outlineMat, Y.overlay + 0.04);
+        if (outline) blueprintOutlineGroup.add(outline);
+      });
+
+      (data.roads || []).forEach(entry => {
+        if (entry.polygon) {
+          const mesh = makeShapeMesh(entry.polygon, roadFillMat, Y.land + 0.03);
+          if (mesh) blueprintMeshGroup.add(mesh);
+          const outline = makeOutline(entry.polygon, roadOutlineMat, Y.overlay + 0.045);
+          if (outline) blueprintOutlineGroup.add(outline);
+        } else if (entry.polyline) {
+          const pts = entry.polyline.map(p => new THREE.Vector3(p[0], Y.overlay + 0.045, p[1]));
+          const geometry = new THREE.BufferGeometry().setFromPoints(pts);
+          const line = new THREE.Line(geometry, roadOutlineMat);
+          line.renderOrder = 999;
+          blueprintOutlineGroup.add(line);
+        }
+      });
+
+      (data.zones || []).forEach(entry => {
+        const points = entry.polygon;
+        const color = typeColors[entry.typeCode] ?? 0xffffff;
+        const zoneMat = new THREE.MeshBasicMaterial({
+          color,
+          transparent: true,
+          opacity: 0.12,
+          depthWrite: false
+        });
+        const mesh = makeShapeMesh(points, zoneMat, Y.land + 0.025);
+        if (mesh) blueprintMeshGroup.add(mesh);
+        const outline = makeOutline(points, outlineMat, Y.overlay + 0.05);
+        if (outline) blueprintOutlineGroup.add(outline);
+      });
+
+      updateDebugVisibility();
     }
     
     // Rebuild a single zone (for editing)
@@ -2870,12 +3048,13 @@ let overlaySettings = null;
     }
     
     function updateOverlayVisibility() {
-      if (!mapOverlayGroup) return;
+      if (!mapOverlayGroup || !mapOverlayMesh) return;
       const toggle = document.getElementById('overlayToggle');
       const allowed = (viewMode === 'plan' || viewMode === 'fidelity');
       const visible = overlaySettings?.visible ?? true;
-      mapOverlayGroup.visible = allowed && visible;
+      mapOverlayMesh.visible = allowed && visible;
       if (toggle) toggle.checked = !!visible;
+      updateDebugVisibility();
     }
     
     // Keyboard controls (arrow keys for camera movement)
@@ -3344,6 +3523,9 @@ let overlaySettings = null;
           
           // Setup overlay controls
           setupOverlayControls();
+          setupDebugHelpers();
+          setupDebugControls();
+          await loadBlueprintData();
           
           console.log('Map overlay loaded. coordMapper available for pixel-to-world conversion.');
         } catch (error) {
@@ -3530,6 +3712,25 @@ let overlaySettings = null;
           }
         });
       }
+    }
+
+    function setupDebugControls() {
+      const gridToggle = document.getElementById('debugGrid');
+      const boundsToggle = document.getElementById('debugOverlayBounds');
+      const blueprintToggle = document.getElementById('debugBlueprintOutlines');
+
+      const bindToggle = (toggle, key) => {
+        if (!toggle) return;
+        toggle.checked = !!debugSettings[key];
+        toggle.addEventListener('change', (e) => {
+          debugSettings[key] = !!e.target.checked;
+          updateDebugVisibility();
+        });
+      };
+
+      bindToggle(gridToggle, 'showGrid');
+      bindToggle(boundsToggle, 'showOverlayBounds');
+      bindToggle(blueprintToggle, 'showBlueprintOutlines');
     }
     
     // ============================================
