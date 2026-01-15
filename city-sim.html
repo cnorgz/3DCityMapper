@@ -130,6 +130,16 @@
       color: #e0e0e0;
       font-size: 12px;
     }
+
+    #overlayControls select {
+      width: 100%;
+      padding: 4px 6px;
+      border-radius: 6px;
+      border: 1px solid rgba(100, 200, 255, 0.3);
+      background: rgba(15, 15, 35, 0.95);
+      color: #e0e0e0;
+      font-size: 12px;
+    }
     
     #overlayControls textarea {
       width: 100%;
@@ -366,6 +376,79 @@
     </div>
     <textarea id="blueprintJson" placeholder="Paste blueprint JSON here"></textarea>
     <div id="blueprintStatus" class="overlay-help">Blueprint status: loaded from file.</div>
+    <hr style="border: none; border-top: 1px solid rgba(100, 200, 255, 0.2); margin: 10px 0;" />
+    <h4 style="color: #64c8ff; font-size: 12px; margin: 8px 0 4px 0;">Editor</h4>
+    <label class="toggle-row">
+      <input type="checkbox" id="editorEnable" />
+      <span>Enable Editor (Fidelity Mode)</span>
+    </label>
+    <div class="control-row">
+      <label for="editorTool">Tool</label>
+      <select id="editorTool">
+        <option value="select">Select</option>
+        <option value="polygon">Draw Polygon</option>
+        <option value="poi">Add POI</option>
+      </select>
+      <span></span>
+    </div>
+    <div class="control-row">
+      <label for="editorLayer">Layer</label>
+      <select id="editorLayer">
+        <option value="zones">Zones</option>
+        <option value="roads">Roads</option>
+        <option value="coastlines">Coastlines</option>
+      </select>
+      <select id="editorTypeCode">
+        <option value="Q">Q</option>
+        <option value="B">B</option>
+        <option value="ZC">ZC</option>
+        <option value="J">J</option>
+        <option value="H">H</option>
+        <option value="R">R</option>
+        <option value="PO">PO</option>
+        <option value="PK">PK</option>
+        <option value="MA">MA</option>
+        <option value="H★">H★</option>
+        <option value="S">S</option>
+        <option value="T">T</option>
+        <option value="D">D</option>
+        <option value="Ci">Ci</option>
+        <option value="ff">ff</option>
+        <option value="P">P</option>
+        <option value="⚡">⚡</option>
+        <option value="💧">💧</option>
+      </select>
+    </div>
+    <div class="control-row">
+      <label for="editorPoiType">POI Type</label>
+      <select id="editorPoiType">
+        <option value="METRO_STATION">METRO</option>
+        <option value="TRAIN_STATION">TRAIN</option>
+        <option value="HYPERLOOP_NODE">HYPERLOOP</option>
+        <option value="PORT">PORT</option>
+        <option value="WIND_TURBINE">WIND</option>
+        <option value="ECOLE">ECOLE</option>
+      </select>
+      <span></span>
+    </div>
+    <label class="toggle-row">
+      <input type="checkbox" id="editorSnapGrid" />
+      <span>Snap to Grid</span>
+    </label>
+    <label class="toggle-row">
+      <input type="checkbox" id="editorSnapPixels" />
+      <span>Snap to Pixels</span>
+    </label>
+    <div class="control-row">
+      <label for="editorPixelStep">Pixel Step</label>
+      <input type="number" id="editorPixelStep" min="1" step="1" value="10" />
+      <span></span>
+    </div>
+    <div class="overlay-actions">
+      <button class="btn" id="editorDelete" style="flex: 1; padding: 6px;">Delete</button>
+      <button class="btn" id="editorClear" style="flex: 1; padding: 6px;">Clear Draft</button>
+    </div>
+    <div id="editorStatus" class="overlay-help">Editor idle.</div>
   </div>
   
   <!-- Touch Controls -->
@@ -412,6 +495,8 @@
     const MAP_OVERLAY_IMG_H = 1000;
     const MAP_OVERLAY_WORLD_W = MAP_WIDTH;
     const MAP_OVERLAY_WORLD_H = MAP_HEIGHT;
+    const GRID_STEP_X = MAP_OVERLAY_WORLD_W / 20;
+    const GRID_STEP_Z = MAP_OVERLAY_WORLD_H / 20;
    
     const IS_DEV = true; // Set to false for production
     
@@ -577,10 +662,28 @@ let gridHelper = null;
 let blueprintData = null;
 let blueprintOutlineGroup = null;
 let blueprintMeshGroup = null;
+let editorGroup = null;
+let editorDraftLine = null;
+let editorSelectionLine = null;
+let editorVertexGroup = null;
 const debugSettings = {
   showGrid: false,
   showOverlayBounds: false,
   showBlueprintOutlines: false
+};
+
+const editorState = {
+  enabled: false,
+  tool: 'select',
+  targetLayer: 'zones',
+  typeCode: 'Q',
+  poiType: 'METRO_STATION',
+  snapGrid: false,
+  snapPixels: false,
+  pixelStep: 10,
+  draft: [],
+  selected: null,
+  dragging: false
 };
 
 // Cameras
@@ -706,11 +809,6 @@ const debugSettings = {
       if (blueprintMeshGroup) blueprintMeshGroup.visible = allowed && debugSettings.showBlueprintOutlines;
     }
 
-    function syncGridToOverlay() {
-      if (!gridHelper || !overlaySettings) return;
-      gridHelper.position.set(overlaySettings.offsetX, Y.overlay + 0.02, overlaySettings.offsetZ);
-      gridHelper.scale.set(overlaySettings.scale, 1, overlaySettings.scale);
-    }
 
     function setupDebugHelpers() {
       const buildRectGrid = (width, height, stepX, stepZ, color) => {
@@ -734,11 +832,9 @@ const debugSettings = {
         return lines;
       };
 
-      const gridStepX = MAP_OVERLAY_WORLD_W / 20;
-      const gridStepZ = MAP_OVERLAY_WORLD_H / 20;
-      gridHelper = buildRectGrid(MAP_OVERLAY_WORLD_W, MAP_OVERLAY_WORLD_H, gridStepX, gridStepZ, 0x4fd1ff);
+      gridHelper = buildRectGrid(MAP_OVERLAY_WORLD_W, MAP_OVERLAY_WORLD_H, GRID_STEP_X, GRID_STEP_Z, 0x4fd1ff);
       gridHelper.position.y = Y.overlay + 0.02;
-      LAYERS.debug.add(gridHelper);
+      mapOverlayGroup.add(gridHelper);
 
       const boundsGeometry = new THREE.PlaneGeometry(MAP_OVERLAY_WORLD_W, MAP_OVERLAY_WORLD_H);
       boundsGeometry.rotateX(-Math.PI / 2);
@@ -751,13 +847,11 @@ const debugSettings = {
 
       blueprintOutlineGroup = new THREE.Group();
       blueprintOutlineGroup.name = 'BlueprintOutlines';
-      LAYERS.debug.add(blueprintOutlineGroup);
+      mapOverlayGroup.add(blueprintOutlineGroup);
 
       blueprintMeshGroup = new THREE.Group();
       blueprintMeshGroup.name = 'BlueprintMeshes';
-      LAYERS.debug.add(blueprintMeshGroup);
-
-      syncGridToOverlay();
+      mapOverlayGroup.add(blueprintMeshGroup);
     }
 
     function normalizeBlueprintData(data) {
@@ -806,8 +900,11 @@ const debugSettings = {
           errors.push(`coastlines[${idx}] polygon has invalid points.`);
           return;
         }
-        if (Math.abs(polygonArea(poly)) < 0.001) {
+        const area = polygonArea(poly);
+        if (Math.abs(area) < 0.001) {
           errors.push(`coastlines[${idx}] polygon area is near zero.`);
+        } else if (area < 0) {
+          warnings.push(`coastlines[${idx}] polygon winding is clockwise.`);
         }
       });
 
@@ -818,8 +915,11 @@ const debugSettings = {
             errors.push(`roads[${idx}] polygon must have >= 3 valid points.`);
             return;
           }
-          if (Math.abs(polygonArea(poly)) < 0.001) {
+          const area = polygonArea(poly);
+          if (Math.abs(area) < 0.001) {
             errors.push(`roads[${idx}] polygon area is near zero.`);
+          } else if (area < 0) {
+            warnings.push(`roads[${idx}] polygon winding is clockwise.`);
           }
         } else if (entry?.polyline) {
           const line = entry.polyline;
@@ -840,8 +940,11 @@ const debugSettings = {
           errors.push(`zones[${idx}] polygon must have >= 3 valid points.`);
           return;
         }
-        if (Math.abs(polygonArea(poly)) < 0.001) {
+        const area = polygonArea(poly);
+        if (Math.abs(area) < 0.001) {
           errors.push(`zones[${idx}] polygon area is near zero.`);
+        } else if (area < 0) {
+          warnings.push(`zones[${idx}] polygon winding is clockwise.`);
         }
       });
 
@@ -887,6 +990,7 @@ const debugSettings = {
 
     function buildBlueprintFromData(data) {
       if (!data) return;
+      if (!blueprintOutlineGroup || !blueprintMeshGroup) return;
       resetGroup(blueprintOutlineGroup);
       resetGroup(blueprintMeshGroup);
 
@@ -983,6 +1087,15 @@ const debugSettings = {
         if (mesh) blueprintMeshGroup.add(mesh);
         const outline = makeOutline(points, outlineMat, Y.overlay + 0.06);
         if (outline) blueprintOutlineGroup.add(outline);
+      });
+
+      const poiGeo = new THREE.SphereGeometry(4, 10, 10);
+      const poiMat = new THREE.MeshBasicMaterial({ color: 0x00ff88 });
+      (data.pois || []).forEach(entry => {
+        if (!entry.position || entry.position.length < 2) return;
+        const marker = new THREE.Mesh(poiGeo, poiMat);
+        marker.position.set(entry.position[0], Y.overlay + 0.08, entry.position[1]);
+        blueprintMeshGroup.add(marker);
       });
 
       updateDebugVisibility();
@@ -3294,6 +3407,10 @@ const debugSettings = {
       }
       
       updateOverlayVisibility();
+      if (editorState.enabled) {
+        updateEditorStatus(viewMode === 'fidelity' ? 'Editor ready.' : 'Editor paused (switch to Fidelity Mode).');
+      }
+      if (editorGroup) editorGroup.visible = editorState.enabled && viewMode === 'fidelity';
     }
     
     function setTimeOfDay(night) {
@@ -3704,6 +3821,8 @@ const debugSettings = {
           setupDebugHelpers();
           setupDebugControls();
           setupBlueprintControls();
+          setupEditorControls();
+          bindEditorEvents();
           await loadBlueprintData();
           
           console.log('Map overlay loaded. coordMapper available for pixel-to-world conversion.');
@@ -3786,7 +3905,6 @@ const debugSettings = {
         mapOverlayGroup.rotation.set(0, THREE.MathUtils.degToRad(settings.rotation), 0);
         mapOverlayGroup.scale.set(settings.scale, 1, settings.scale);
         if (mapOverlayMesh.material) mapOverlayMesh.material.opacity = settings.opacity;
-        syncGridToOverlay();
         verifyOverlayMapping();
         
         if (!syncInputs) return;
@@ -3993,6 +4111,399 @@ const debugSettings = {
           setBlueprintStatus('Blueprint status: loaded from textarea.');
         } catch (e) {
           setBlueprintStatus('Blueprint load: invalid JSON.', false);
+        }
+      });
+    }
+
+    function editorActive() {
+      return editorState.enabled && viewMode === 'fidelity';
+    }
+
+    function ensureEditorGroups() {
+      if (!mapOverlayGroup || editorGroup) return;
+      editorGroup = new THREE.Group();
+      editorGroup.name = 'EditorGroup';
+      mapOverlayGroup.add(editorGroup);
+
+      const draftMat = new THREE.LineBasicMaterial({ color: 0xffff66, transparent: true, opacity: 0.9 });
+      editorDraftLine = new THREE.Line(new THREE.BufferGeometry(), draftMat);
+      editorDraftLine.renderOrder = 999;
+      editorDraftLine.position.y = Y.overlay + 0.07;
+      editorGroup.add(editorDraftLine);
+
+      const selectMat = new THREE.LineBasicMaterial({ color: 0xffee55, transparent: true, opacity: 0.95 });
+      editorSelectionLine = new THREE.LineLoop(new THREE.BufferGeometry(), selectMat);
+      editorSelectionLine.renderOrder = 999;
+      editorSelectionLine.position.y = Y.overlay + 0.08;
+      editorGroup.add(editorSelectionLine);
+
+      editorVertexGroup = new THREE.Group();
+      editorVertexGroup.name = 'EditorVertices';
+      editorGroup.add(editorVertexGroup);
+      editorGroup.visible = editorState.enabled;
+    }
+
+    function updateEditorStatus(text) {
+      const el = document.getElementById('editorStatus');
+      if (!el) return;
+      el.textContent = text;
+    }
+
+    function updateEditorUIState() {
+      const toolSelect = document.getElementById('editorTool');
+      const layerSelect = document.getElementById('editorLayer');
+      const typeSelect = document.getElementById('editorTypeCode');
+      const poiSelect = document.getElementById('editorPoiType');
+      if (toolSelect) toolSelect.value = editorState.tool;
+      if (layerSelect) layerSelect.value = editorState.targetLayer;
+      if (typeSelect) {
+        typeSelect.disabled = (editorState.targetLayer !== 'zones');
+        typeSelect.value = editorState.typeCode;
+      }
+      if (poiSelect) {
+        poiSelect.disabled = (editorState.tool !== 'poi');
+        poiSelect.value = editorState.poiType;
+      }
+    }
+
+    function getPointerMapPoint(event) {
+      if (!mapOverlayGroup) return null;
+      const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -Y.overlay);
+      const mouseVec = new THREE.Vector2(
+        (event.clientX / window.innerWidth) * 2 - 1,
+        -(event.clientY / window.innerHeight) * 2 + 1
+      );
+      raycaster.setFromCamera(mouseVec, activeCamera);
+      const hit = new THREE.Vector3();
+      if (!raycaster.ray.intersectPlane(plane, hit)) return null;
+      mapOverlayGroup.worldToLocal(hit);
+      return { x: hit.x, z: hit.z };
+    }
+
+    function snapMapPoint(point) {
+      let x = point.x;
+      let z = point.z;
+
+      if (editorState.snapGrid) {
+        x = Math.round(x / GRID_STEP_X) * GRID_STEP_X;
+        z = Math.round(z / GRID_STEP_Z) * GRID_STEP_Z;
+      }
+
+      if (editorState.snapPixels && mapCoordMapper) {
+        const px = mapCoordMapper.worldToPx(x, z);
+        const step = Math.max(1, editorState.pixelStep);
+        const snappedPx = {
+          px: Math.round(px.px / step) * step,
+          py: Math.round(px.py / step) * step
+        };
+        const snapped = mapCoordMapper.pxToWorld(snappedPx.px, snappedPx.py);
+        x = snapped.x;
+        z = snapped.z;
+      }
+
+      return { x, z };
+    }
+
+    function updateDraftLine() {
+      if (!editorDraftLine) return;
+      const points = editorState.draft;
+      if (!points || points.length < 2) {
+        editorDraftLine.visible = false;
+        return;
+      }
+      const verts = points.map(p => new THREE.Vector3(p[0], 0, p[1]));
+      const geometry = new THREE.BufferGeometry().setFromPoints(verts);
+      editorDraftLine.geometry.dispose();
+      editorDraftLine.geometry = geometry;
+      editorDraftLine.visible = true;
+    }
+
+    function updateSelectionMarkers() {
+      if (!editorVertexGroup || !editorSelectionLine) return;
+      resetGroup(editorVertexGroup);
+      editorSelectionLine.visible = false;
+
+      const selection = editorState.selected;
+      if (!selection || !blueprintData) return;
+      const list = blueprintData[selection.layer];
+      if (!list || !list[selection.index]) return;
+      const entry = list[selection.index];
+      if (!entry.polygon || entry.polygon.length < 2) return;
+
+      const linePoints = entry.polygon.map(p => new THREE.Vector3(p[0], 0, p[1]));
+      const lineGeom = new THREE.BufferGeometry().setFromPoints(linePoints);
+      editorSelectionLine.geometry.dispose();
+      editorSelectionLine.geometry = lineGeom;
+      editorSelectionLine.visible = true;
+
+      const sphereGeo = new THREE.SphereGeometry(3, 10, 10);
+      entry.polygon.forEach((pt, idx) => {
+        const mat = new THREE.MeshBasicMaterial({ color: idx === selection.vertexIndex ? 0xff8844 : 0xffffff });
+        const sphere = new THREE.Mesh(sphereGeo, mat);
+        sphere.position.set(pt[0], Y.overlay + 0.09, pt[1]);
+        editorVertexGroup.add(sphere);
+      });
+    }
+
+    function pointInPolygon(point, polygon) {
+      let inside = false;
+      for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+        const xi = polygon[i][0], zi = polygon[i][1];
+        const xj = polygon[j][0], zj = polygon[j][1];
+        const intersect = ((zi > point.z) !== (zj > point.z)) &&
+          (point.x < (xj - xi) * (point.z - zi) / ((zj - zi) || 1e-6) + xi);
+        if (intersect) inside = !inside;
+      }
+      return inside;
+    }
+
+    function findNearestVertex(point, threshold) {
+      if (!blueprintData) return null;
+      const layers = ['zones', 'roads', 'coastlines'];
+      let best = null;
+      const thresh2 = threshold * threshold;
+
+      layers.forEach(layer => {
+        const list = blueprintData[layer] || [];
+        list.forEach((entry, idx) => {
+          if (!entry.polygon) return;
+          entry.polygon.forEach((pt, vIdx) => {
+            const dx = pt[0] - point.x;
+            const dz = pt[1] - point.z;
+            const d2 = dx * dx + dz * dz;
+            if (d2 < thresh2 && (!best || d2 < best.dist2)) {
+              best = { layer, index: idx, vertexIndex: vIdx, dist2: d2 };
+            }
+          });
+        });
+      });
+      return best;
+    }
+
+    function findPolygonHit(point) {
+      if (!blueprintData) return null;
+      const layers = ['zones', 'roads', 'coastlines'];
+      for (const layer of layers) {
+        const list = blueprintData[layer] || [];
+        for (let idx = 0; idx < list.length; idx++) {
+          const entry = list[idx];
+          if (!entry.polygon) continue;
+          if (pointInPolygon(point, entry.polygon)) {
+            return { layer, index: idx, vertexIndex: null };
+          }
+        }
+      }
+      return null;
+    }
+
+    function selectAtPoint(point) {
+      const vertexHit = findNearestVertex(point, 12);
+      if (vertexHit) return vertexHit;
+      return findPolygonHit(point);
+    }
+
+    function addPolygonFromDraft() {
+      if (!blueprintData) blueprintData = normalizeBlueprintData({});
+      if (editorState.draft.length < 3) return;
+
+      const id = `${editorState.targetLayer}-${Date.now()}`;
+      const polygon = editorState.draft.map(p => [p[0], p[1]]);
+
+      if (editorState.targetLayer === 'zones') {
+        blueprintData.zones.push({ id, typeCode: editorState.typeCode, polygon });
+      } else if (editorState.targetLayer === 'roads') {
+        blueprintData.roads.push({ id, polygon });
+      } else if (editorState.targetLayer === 'coastlines') {
+        blueprintData.coastlines.push({ id, polygon });
+      }
+
+      editorState.draft = [];
+      editorState.selected = { layer: editorState.targetLayer, index: (blueprintData[editorState.targetLayer].length - 1), vertexIndex: null };
+      buildBlueprintFromData(blueprintData);
+      updateDraftLine();
+      updateSelectionMarkers();
+      updateEditorStatus('Polygon added.');
+    }
+
+    function deleteSelection() {
+      if (!blueprintData || !editorState.selected) return;
+      const { layer, index, vertexIndex } = editorState.selected;
+      const list = blueprintData[layer];
+      if (!list || !list[index]) return;
+      const entry = list[index];
+      if (vertexIndex !== null && entry.polygon) {
+        entry.polygon.splice(vertexIndex, 1);
+        if (entry.polygon.length < 3) {
+          list.splice(index, 1);
+          editorState.selected = null;
+        } else {
+          editorState.selected.vertexIndex = null;
+        }
+      } else {
+        list.splice(index, 1);
+        editorState.selected = null;
+      }
+      buildBlueprintFromData(blueprintData);
+      updateSelectionMarkers();
+      updateEditorStatus('Selection deleted.');
+    }
+
+    function addPoiAt(point) {
+      if (!blueprintData) blueprintData = normalizeBlueprintData({});
+      const id = `poi-${Date.now()}`;
+      blueprintData.pois.push({ id, type: editorState.poiType, position: [point.x, point.z] });
+      buildBlueprintFromData(blueprintData);
+      updateEditorStatus('POI added.');
+    }
+
+    function setupEditorControls() {
+      const enableToggle = document.getElementById('editorEnable');
+      const toolSelect = document.getElementById('editorTool');
+      const layerSelect = document.getElementById('editorLayer');
+      const typeSelect = document.getElementById('editorTypeCode');
+      const poiSelect = document.getElementById('editorPoiType');
+      const snapGridToggle = document.getElementById('editorSnapGrid');
+      const snapPixelToggle = document.getElementById('editorSnapPixels');
+      const pixelStepInput = document.getElementById('editorPixelStep');
+      const deleteBtn = document.getElementById('editorDelete');
+      const clearBtn = document.getElementById('editorClear');
+
+      if (!enableToggle) return;
+
+      enableToggle.checked = editorState.enabled;
+      enableToggle.addEventListener('change', (e) => {
+        editorState.enabled = !!e.target.checked;
+        ensureEditorGroups();
+        if (editorGroup) editorGroup.visible = editorState.enabled && viewMode === 'fidelity';
+        if (editorState.enabled && viewMode !== 'fidelity') {
+          updateEditorStatus('Editor enabled (switch to Fidelity Mode).');
+        } else {
+          updateEditorStatus(editorState.enabled ? 'Editor enabled.' : 'Editor disabled.');
+        }
+        updateEditorUIState();
+      });
+
+      if (toolSelect) {
+        toolSelect.addEventListener('change', (e) => {
+          editorState.tool = e.target.value;
+          if (editorState.tool !== 'polygon') {
+            editorState.draft = [];
+            updateDraftLine();
+          }
+          updateEditorUIState();
+          updateEditorStatus(`Tool: ${editorState.tool}`);
+        });
+      }
+
+      if (layerSelect) {
+        layerSelect.addEventListener('change', (e) => {
+          editorState.targetLayer = e.target.value;
+          updateEditorUIState();
+        });
+      }
+
+      if (typeSelect) {
+        typeSelect.addEventListener('change', (e) => {
+          editorState.typeCode = e.target.value;
+        });
+      }
+
+      if (poiSelect) {
+        poiSelect.addEventListener('change', (e) => {
+          editorState.poiType = e.target.value;
+        });
+      }
+
+      if (snapGridToggle) {
+        snapGridToggle.addEventListener('change', (e) => {
+          editorState.snapGrid = !!e.target.checked;
+        });
+      }
+
+      if (snapPixelToggle) {
+        snapPixelToggle.addEventListener('change', (e) => {
+          editorState.snapPixels = !!e.target.checked;
+        });
+      }
+
+      if (pixelStepInput) {
+        pixelStepInput.addEventListener('input', (e) => {
+          editorState.pixelStep = Number.parseFloat(e.target.value) || 1;
+        });
+      }
+
+      if (deleteBtn) deleteBtn.addEventListener('click', deleteSelection);
+
+      if (clearBtn) {
+        clearBtn.addEventListener('click', () => {
+          editorState.draft = [];
+          updateDraftLine();
+          updateEditorStatus('Draft cleared.');
+        });
+      }
+
+      updateEditorUIState();
+    }
+
+    function bindEditorEvents() {
+      renderer.domElement.addEventListener('pointerdown', (e) => {
+        if (!editorActive()) return;
+        if (e.button !== 0) return;
+
+        const mapPoint = getPointerMapPoint(e);
+        if (!mapPoint) return;
+        const snapped = snapMapPoint(mapPoint);
+
+        if (editorState.tool === 'polygon') {
+          editorState.draft.push([snapped.x, snapped.z]);
+          updateDraftLine();
+          updateEditorStatus(`Draft points: ${editorState.draft.length}`);
+          return;
+        }
+
+        if (editorState.tool === 'poi') {
+          addPoiAt(snapped);
+          return;
+        }
+
+        const selection = selectAtPoint(snapped);
+        editorState.selected = selection;
+        updateSelectionMarkers();
+
+        if (selection && selection.vertexIndex !== null) {
+          editorState.dragging = true;
+        }
+      });
+
+      renderer.domElement.addEventListener('pointermove', (e) => {
+        if (!editorActive() || !editorState.dragging || !editorState.selected) return;
+        const mapPoint = getPointerMapPoint(e);
+        if (!mapPoint) return;
+        const snapped = snapMapPoint(mapPoint);
+        const { layer, index, vertexIndex } = editorState.selected;
+        const list = blueprintData?.[layer];
+        if (!list || !list[index] || vertexIndex === null) return;
+        list[index].polygon[vertexIndex] = [snapped.x, snapped.z];
+        buildBlueprintFromData(blueprintData);
+        updateSelectionMarkers();
+      });
+
+      renderer.domElement.addEventListener('pointerup', () => {
+        if (editorState.dragging) {
+          editorState.dragging = false;
+        }
+      });
+
+      window.addEventListener('keydown', (e) => {
+        if (!editorActive()) return;
+        if (e.key === 'Enter') {
+          if (editorState.tool === 'polygon') addPolygonFromDraft();
+        } else if (e.key === 'Escape') {
+          editorState.draft = [];
+          updateDraftLine();
+          updateEditorStatus('Draft cancelled.');
+        } else if (e.key === 'Delete' || e.key === 'Backspace') {
+          deleteSelection();
         }
       });
     }
