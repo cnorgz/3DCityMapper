@@ -4322,6 +4322,7 @@ const POI_COLORS = {
       draftMat.depthTest = false;
       editorDraftLine = new Line2(new LineGeometry(), draftMat);
       editorDraftLine.renderOrder = 999;
+      editorDraftLine.frustumCulled = false;
       editorDraftLine.position.y = Y.overlay + 0.07;
       editorGroup.add(editorDraftLine);
 
@@ -4329,6 +4330,7 @@ const POI_COLORS = {
       draftGlowMat.depthTest = false;
       editorDraftGlowLine = new Line2(new LineGeometry(), draftGlowMat);
       editorDraftGlowLine.renderOrder = 998;
+      editorDraftGlowLine.frustumCulled = false;
       editorDraftGlowLine.position.y = Y.overlay + 0.071;
       editorGroup.add(editorDraftGlowLine);
 
@@ -4336,6 +4338,7 @@ const POI_COLORS = {
       selectMat.depthTest = false;
       editorSelectionLine = new Line2(new LineGeometry(), selectMat);
       editorSelectionLine.renderOrder = 999;
+      editorSelectionLine.frustumCulled = false;
       editorSelectionLine.position.y = Y.overlay + 0.08;
       editorGroup.add(editorSelectionLine);
 
@@ -4343,6 +4346,7 @@ const POI_COLORS = {
       selectGlowMat.depthTest = false;
       editorSelectionGlowLine = new Line2(new LineGeometry(), selectGlowMat);
       editorSelectionGlowLine.renderOrder = 998;
+      editorSelectionGlowLine.frustumCulled = false;
       editorSelectionGlowLine.position.y = Y.overlay + 0.081;
       editorGroup.add(editorSelectionGlowLine);
 
@@ -4386,7 +4390,12 @@ const POI_COLORS = {
         const first = points[0];
         verts.push(first[0], 0, first[1]);
       }
-      line.geometry.setPositions(verts);
+      const nextGeometry = new LineGeometry();
+      nextGeometry.setPositions(verts);
+      if (line.geometry) line.geometry.dispose();
+      line.geometry = nextGeometry;
+      const instStart = line.geometry.attributes?.instanceStart;
+      if (instStart) line.geometry.instanceCount = instStart.count;
       line.computeLineDistances();
       line.visible = true;
     }
