@@ -385,6 +385,11 @@
     <textarea id="overlayJson" placeholder="Paste calibration JSON here"></textarea>
     <hr style="border: none; border-top: 1px solid rgba(100, 200, 255, 0.2); margin: 10px 0;" />
     <h4 style="color: #64c8ff; font-size: 12px; margin: 8px 0 4px 0;">Debug</h4>
+    <div class="control-row">
+      <label for="overlayDimmer">Map Dim</label>
+      <input type="range" id="overlayDimmer" min="0" max="0.8" step="0.01" value="0" data-step="0.01" data-step-fine="0.005" />
+      <input type="number" id="overlayDimmerValue" min="0" max="0.8" step="0.01" value="0" />
+    </div>
     <label class="toggle-row">
       <input type="checkbox" id="debugGrid" />
       <span>Grid</span>
@@ -681,6 +686,7 @@ const OVERLAY_DEFAULTS = {
   rotation: 0,
   scale: 1,
   opacity: 0.9,
+  dimmer: 0,
   visible: true
 };
 const OVERLAY_LIMITS = {
@@ -688,11 +694,13 @@ const OVERLAY_LIMITS = {
   offsetZ: { min: -400, max: 400 },
   rotation: { min: -45, max: 45 },
   scale: { min: 0.5, max: 1.5 },
-  opacity: { min: 0, max: 1 }
+  opacity: { min: 0, max: 1 },
+  dimmer: { min: 0, max: 0.8 }
 };
 
 let mapOverlayGroup = null;
 let mapOverlayMesh = null;
+let overlayDimmer = null;
 let mapCoordMapper = null;
 let probeMarker = null;
 let overlaySettings = null;
@@ -703,8 +711,11 @@ let blueprintOutlineGroup = null;
 let blueprintMeshGroup = null;
 let editorGroup = null;
 let editorDraftLine = null;
+let editorDraftGlowLine = null;
 let editorSelectionLine = null;
+let editorSelectionGlowLine = null;
 let editorVertexGroup = null;
+let editorDraftVertexGroup = null;
 const debugSettings = {
   showGrid: false,
   showOverlayBounds: false,
@@ -723,6 +734,8 @@ const editorState = {
   draft: [],
   selected: null,
   dragging: null,
+  hover: null,
+  hoverDraftIndex: null,
   hideCity: false
 };
 
@@ -1090,14 +1103,18 @@ const POI_COLORS = {
       const landFillMat = new THREE.MeshBasicMaterial({
         color: COLORS.land,
         transparent: true,
-        opacity: 0.12,
-        depthWrite: false
+        opacity: 0.18,
+        depthWrite: false,
+        depthTest: false,
+        side: THREE.DoubleSide
       });
       const roadFillMat = new THREE.MeshBasicMaterial({
         color: 0x222222,
         transparent: true,
-        opacity: 0.2,
-        depthWrite: false
+        opacity: 0.22,
+        depthWrite: false,
+        depthTest: false,
+        side: THREE.DoubleSide
       });
 
       const makeShapeMesh = (points, material, y) => {
@@ -1124,7 +1141,8 @@ const POI_COLORS = {
 
       (data.coastlines || []).forEach(entry => {
         const points = entry.polygon;
-        const mesh = makeShapeMesh(points, landFillMat, Y.land + 0.02);
+        const fillBase = Y.overlay + 0.02;
+        const mesh = makeShapeMesh(points, landFillMat, fillBase);
         if (mesh) blueprintMeshGroup.add(mesh);
         const outline = makeOutline(points, 0x00f0ff, Y.overlay + 0.05);
         if (outline) blueprintOutlineGroup.add(outline);
@@ -1132,7 +1150,8 @@ const POI_COLORS = {
 
       (data.roads || []).forEach(entry => {
         if (entry.polygon) {
-          const mesh = makeShapeMesh(entry.polygon, roadFillMat, Y.land + 0.03);
+          const fillBase = Y.overlay + 0.022;
+          const mesh = makeShapeMesh(entry.polygon, roadFillMat, fillBase);
           if (mesh) blueprintMeshGroup.add(mesh);
           const outline = makeOutline(entry.polygon, 0xffffff, Y.overlay + 0.055);
           if (outline) blueprintOutlineGroup.add(outline);
@@ -1151,10 +1170,12 @@ const POI_COLORS = {
         const zoneMat = new THREE.MeshBasicMaterial({
           color,
           transparent: true,
-          opacity: 0.08,
-          depthWrite: false
+          opacity: 0.14,
+          depthWrite: false,
+          depthTest: false,
+          side: THREE.DoubleSide
         });
-        const mesh = makeShapeMesh(points, zoneMat, Y.land + 0.026);
+        const mesh = makeShapeMesh(points, zoneMat, Y.overlay + 0.024);
         if (mesh) blueprintMeshGroup.add(mesh);
         const outline = makeOutline(points, color, Y.overlay + 0.065);
         if (outline) blueprintOutlineGroup.add(outline);
@@ -1166,10 +1187,12 @@ const POI_COLORS = {
         const zoneMat = new THREE.MeshBasicMaterial({
           color,
           transparent: true,
-          opacity: 0.12,
-          depthWrite: false
+          opacity: 0.18,
+          depthWrite: false,
+          depthTest: false,
+          side: THREE.DoubleSide
         });
-        const mesh = makeShapeMesh(points, zoneMat, Y.land + 0.025);
+        const mesh = makeShapeMesh(points, zoneMat, Y.overlay + 0.023);
         if (mesh) blueprintMeshGroup.add(mesh);
         const outline = makeOutline(points, color, Y.overlay + 0.06);
         if (outline) blueprintOutlineGroup.add(outline);
@@ -3429,7 +3452,9 @@ const POI_COLORS = {
       const toggle = document.getElementById('overlayToggle');
       const allowed = (viewMode === 'plan' || viewMode === 'fidelity');
       const visible = overlaySettings?.visible ?? true;
-      mapOverlayMesh.visible = allowed && visible;
+      const isVisible = allowed && visible;
+      mapOverlayMesh.visible = isVisible;
+      if (overlayDimmer) overlayDimmer.visible = isVisible;
       if (toggle) toggle.checked = !!visible;
       updateDebugVisibility();
     }
@@ -3890,6 +3915,21 @@ const POI_COLORS = {
           mapOverlayMesh = overlayResult.mesh;
           mapOverlayMesh.raycast = () => null;
           mapOverlayGroup.add(mapOverlayMesh);
+          const dimmerMat = new THREE.MeshBasicMaterial({
+            color: 0x000000,
+            transparent: true,
+            opacity: 0,
+            depthWrite: false
+          });
+          dimmerMat.depthTest = false;
+          overlayDimmer = new THREE.Mesh(
+            new THREE.PlaneGeometry(MAP_OVERLAY_WORLD_W, MAP_OVERLAY_WORLD_H),
+            dimmerMat
+          );
+          overlayDimmer.geometry.rotateX(-Math.PI / 2);
+          overlayDimmer.position.y = Y.overlay + 0.001;
+          overlayDimmer.renderOrder = 2;
+          mapOverlayGroup.add(overlayDimmer);
           LAYERS.overlay.add(mapOverlayGroup);
           
           // Create coordinate mapper
@@ -3938,6 +3978,8 @@ const POI_COLORS = {
       const toggle = document.getElementById('overlayToggle');
       const opacitySlider = document.getElementById('overlayOpacity');
       const opacityInput = document.getElementById('overlayOpacityValue');
+      const dimmerSlider = document.getElementById('overlayDimmer');
+      const dimmerInput = document.getElementById('overlayDimmerValue');
       const offsetXSlider = document.getElementById('overlayOffsetX');
       const offsetXInput = document.getElementById('overlayOffsetXValue');
       const offsetZSlider = document.getElementById('overlayOffsetZ');
@@ -3959,7 +4001,7 @@ const POI_COLORS = {
         const normalized = { ...OVERLAY_DEFAULTS };
         if (typeof raw.visible === 'boolean') normalized.visible = raw.visible;
         
-        ['offsetX', 'offsetZ', 'rotation', 'scale', 'opacity'].forEach(key => {
+        ['offsetX', 'offsetZ', 'rotation', 'scale', 'opacity', 'dimmer'].forEach(key => {
           const value = Number.parseFloat(raw[key]);
           if (Number.isFinite(value)) {
             const limit = OVERLAY_LIMITS[key];
@@ -3993,11 +4035,14 @@ const POI_COLORS = {
         mapOverlayGroup.rotation.set(0, THREE.MathUtils.degToRad(settings.rotation), 0);
         mapOverlayGroup.scale.set(settings.scale, 1, settings.scale);
         if (mapOverlayMesh.material) mapOverlayMesh.material.opacity = settings.opacity;
+        if (overlayDimmer && overlayDimmer.material) overlayDimmer.material.opacity = settings.dimmer;
         verifyOverlayMapping();
         
         if (!syncInputs) return;
         if (opacitySlider) opacitySlider.value = settings.opacity;
         if (opacityInput) opacityInput.value = settings.opacity;
+        if (dimmerSlider) dimmerSlider.value = settings.dimmer;
+        if (dimmerInput) dimmerInput.value = settings.dimmer;
         if (offsetXSlider) offsetXSlider.value = settings.offsetX;
         if (offsetXInput) offsetXInput.value = settings.offsetX;
         if (offsetZSlider) offsetZSlider.value = settings.offsetZ;
@@ -4030,6 +4075,7 @@ const POI_COLORS = {
       };
       
       const stepInputs = [opacitySlider, offsetXSlider, offsetZSlider, rotationSlider, scaleSlider];
+      if (dimmerSlider) stepInputs.push(dimmerSlider);
       const setFineSteps = (fine) => {
         stepInputs.forEach(input => {
           if (!input) return;
@@ -4056,6 +4102,7 @@ const POI_COLORS = {
       });
       
       bindDualInput('opacity', opacitySlider, opacityInput);
+      bindDualInput('dimmer', dimmerSlider, dimmerInput);
       bindDualInput('offsetX', offsetXSlider, offsetXInput);
       bindDualInput('offsetZ', offsetZSlider, offsetZInput);
       bindDualInput('rotation', rotationSlider, rotationInput);
@@ -4244,6 +4291,13 @@ const POI_COLORS = {
       editorDraftLine.position.y = Y.overlay + 0.07;
       editorGroup.add(editorDraftLine);
 
+      const draftGlowMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.4, linewidth: 2 });
+      draftGlowMat.depthTest = false;
+      editorDraftGlowLine = new THREE.Line(new THREE.BufferGeometry(), draftGlowMat);
+      editorDraftGlowLine.renderOrder = 998;
+      editorDraftGlowLine.position.y = Y.overlay + 0.071;
+      editorGroup.add(editorDraftGlowLine);
+
       const selectMat = new THREE.LineBasicMaterial({ color: 0xffee55, transparent: true, opacity: 0.95, linewidth: 2 });
       selectMat.depthTest = false;
       editorSelectionLine = new THREE.LineLoop(new THREE.BufferGeometry(), selectMat);
@@ -4251,9 +4305,20 @@ const POI_COLORS = {
       editorSelectionLine.position.y = Y.overlay + 0.08;
       editorGroup.add(editorSelectionLine);
 
+      const selectGlowMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.35, linewidth: 2 });
+      selectGlowMat.depthTest = false;
+      editorSelectionGlowLine = new THREE.LineLoop(new THREE.BufferGeometry(), selectGlowMat);
+      editorSelectionGlowLine.renderOrder = 998;
+      editorSelectionGlowLine.position.y = Y.overlay + 0.081;
+      editorGroup.add(editorSelectionGlowLine);
+
       editorVertexGroup = new THREE.Group();
       editorVertexGroup.name = 'EditorVertices';
       editorGroup.add(editorVertexGroup);
+
+      editorDraftVertexGroup = new THREE.Group();
+      editorDraftVertexGroup.name = 'EditorDraftVertices';
+      editorGroup.add(editorDraftVertexGroup);
       editorGroup.visible = editorState.enabled;
     }
 
@@ -4319,7 +4384,7 @@ const POI_COLORS = {
     }
 
     function updateDraftLine() {
-      if (!editorDraftLine) return;
+      if (!editorDraftLine || !editorDraftGlowLine) return;
       const points = editorState.draft;
       const color = LEGEND_LINE_COLORS[editorState.typeCode] ?? 0xffff66;
       if (editorState.targetLayer === 'roads') {
@@ -4331,6 +4396,7 @@ const POI_COLORS = {
       }
       if (!points || points.length < 2) {
         editorDraftLine.visible = false;
+        editorDraftGlowLine.visible = false;
         return;
       }
       const verts = points.map(p => new THREE.Vector3(p[0], 0, p[1]));
@@ -4338,12 +4404,39 @@ const POI_COLORS = {
       editorDraftLine.geometry.dispose();
       editorDraftLine.geometry = geometry;
       editorDraftLine.visible = true;
+
+      const glowGeometry = new THREE.BufferGeometry().setFromPoints(verts);
+      editorDraftGlowLine.geometry.dispose();
+      editorDraftGlowLine.geometry = glowGeometry;
+      editorDraftGlowLine.visible = true;
+    }
+
+    function updateDraftMarkers() {
+      if (!editorDraftVertexGroup) return;
+      resetGroup(editorDraftVertexGroup);
+      const points = editorState.draft;
+      if (!points || points.length === 0) return;
+
+      const radius = 4;
+      const geo = new THREE.SphereGeometry(radius, 10, 10);
+      points.forEach((pt, idx) => {
+        const hovered = editorState.hoverDraftIndex === idx;
+        const mat = new THREE.MeshBasicMaterial({
+          color: 0xffffff,
+          transparent: true,
+          opacity: hovered ? 0.55 : 1.0
+        });
+        const sphere = new THREE.Mesh(geo, mat);
+        sphere.position.set(pt[0], Y.overlay + 0.09, pt[1]);
+        editorDraftVertexGroup.add(sphere);
+      });
     }
 
     function updateSelectionMarkers() {
-      if (!editorVertexGroup || !editorSelectionLine) return;
+      if (!editorVertexGroup || !editorSelectionLine || !editorSelectionGlowLine) return;
       resetGroup(editorVertexGroup);
       editorSelectionLine.visible = false;
+      editorSelectionGlowLine.visible = false;
 
       const selection = editorState.selected;
       if (!selection || !blueprintData) return;
@@ -4356,6 +4449,8 @@ const POI_COLORS = {
       const lineGeom = new THREE.BufferGeometry().setFromPoints(linePoints);
       editorSelectionLine.geometry.dispose();
       editorSelectionLine.geometry = lineGeom;
+      editorSelectionGlowLine.geometry.dispose();
+      editorSelectionGlowLine.geometry = lineGeom.clone();
       if (selection.layer === 'roads') {
         editorSelectionLine.material.color.setHex(0xffffff);
       } else if (selection.layer === 'coastlines') {
@@ -4364,10 +4459,21 @@ const POI_COLORS = {
         editorSelectionLine.material.color.setHex(LEGEND_LINE_COLORS[entry.typeCode] ?? 0xffff66);
       }
       editorSelectionLine.visible = true;
+      editorSelectionGlowLine.visible = true;
 
-      const sphereGeo = new THREE.SphereGeometry(3, 10, 10);
+      const sphereGeo = new THREE.SphereGeometry(4, 10, 10);
       entry.polygon.forEach((pt, idx) => {
-        const mat = new THREE.MeshBasicMaterial({ color: idx === selection.vertexIndex ? 0xff8844 : 0xffffff });
+        const isActive = idx === selection.vertexIndex;
+        const isHovered = editorState.hover &&
+          editorState.hover.layer === selection.layer &&
+          editorState.hover.index === selection.index &&
+          editorState.hover.vertexIndex === idx;
+        const baseColor = LEGEND_LINE_COLORS[entry.typeCode] ?? 0xffffff;
+        const mat = new THREE.MeshBasicMaterial({
+          color: isActive ? 0xffffff : baseColor,
+          transparent: true,
+          opacity: isHovered ? 0.55 : 0.95
+        });
         const sphere = new THREE.Mesh(sphereGeo, mat);
         sphere.position.set(pt[0], Y.overlay + 0.09, pt[1]);
         editorVertexGroup.add(sphere);
@@ -4397,6 +4503,59 @@ const POI_COLORS = {
       return best;
     }
 
+    function findNearestDraftVertex(point, threshold) {
+      if (!editorState.draft || editorState.draft.length === 0) return null;
+      const thresh2 = threshold * threshold;
+      let best = null;
+      editorState.draft.forEach((pt, idx) => {
+        const dx = pt[0] - point.x;
+        const dz = pt[1] - point.z;
+        const d2 = dx * dx + dz * dz;
+        if (d2 < thresh2 && (best === null || d2 < best.dist2)) {
+          best = { index: idx, dist2: d2 };
+        }
+      });
+      return best;
+    }
+
+    function distancePointToSegment(point, a, b) {
+      const abx = b[0] - a[0];
+      const abz = b[1] - a[1];
+      const apx = point.x - a[0];
+      const apz = point.z - a[1];
+      const abLen2 = abx * abx + abz * abz;
+      const t = abLen2 === 0 ? 0 : (apx * abx + apz * abz) / abLen2;
+      const clamped = Math.max(0, Math.min(1, t));
+      const cx = a[0] + abx * clamped;
+      const cz = a[1] + abz * clamped;
+      const dx = point.x - cx;
+      const dz = point.z - cz;
+      return { dist2: dx * dx + dz * dz, closest: { x: cx, z: cz } };
+    }
+
+    function findNearestEdge(point, threshold) {
+      if (!blueprintData) return null;
+      const layers = ['buildings', 'zones', 'roads', 'coastlines'];
+      const thresh2 = threshold * threshold;
+      let best = null;
+      layers.forEach(layer => {
+        const list = blueprintData[layer] || [];
+        list.forEach((entry, idx) => {
+          if (!entry.polygon || entry.polygon.length < 2) return;
+          const poly = entry.polygon;
+          for (let i = 0; i < poly.length; i++) {
+            const a = poly[i];
+            const b = poly[(i + 1) % poly.length];
+            const res = distancePointToSegment(point, a, b);
+            if (res.dist2 < thresh2 && (!best || res.dist2 < best.dist2)) {
+              best = { layer, index: idx, segmentIndex: i + 1, dist2: res.dist2, point: res.closest };
+            }
+          }
+        });
+      });
+      return best;
+    }
+
     function findPolygonHit(point) {
       if (!blueprintData) return null;
       const layers = ['buildings', 'zones', 'roads', 'coastlines'];
@@ -4417,6 +4576,24 @@ const POI_COLORS = {
       const vertexHit = findNearestVertex(point, 12);
       if (vertexHit) return vertexHit;
       return findPolygonHit(point);
+    }
+
+    function updateEditorHover(point) {
+      if (!editorActive()) return;
+      editorState.hover = null;
+      editorState.hoverDraftIndex = null;
+      const draftHit = findNearestDraftVertex(point, 10);
+      if (draftHit) {
+        editorState.hoverDraftIndex = draftHit.index;
+        updateDraftMarkers();
+        return;
+      }
+      const vertexHit = findNearestVertex(point, 10);
+      if (vertexHit) {
+        editorState.hover = vertexHit;
+        updateSelectionMarkers();
+      }
+      updateDraftMarkers();
     }
 
     function addPolygonFromDraft() {
@@ -4440,6 +4617,7 @@ const POI_COLORS = {
       editorState.selected = { layer: editorState.targetLayer, index: (blueprintData[editorState.targetLayer].length - 1), vertexIndex: null };
       buildBlueprintFromData(blueprintData);
       updateDraftLine();
+      updateDraftMarkers();
       updateSelectionMarkers();
       updateEditorStatus('Polygon added.');
     }
@@ -4562,8 +4740,11 @@ const POI_COLORS = {
           blueprintData = normalizeBlueprintData({});
           editorState.draft = [];
           editorState.selected = null;
+          editorState.hover = null;
+          editorState.hoverDraftIndex = null;
           buildBlueprintFromData(blueprintData);
           updateDraftLine();
+          updateDraftMarkers();
           updateSelectionMarkers();
           updateEditorStatus('Cleared all blueprint shapes.');
           setBlueprintStatus('Blueprint status: cleared in memory.');
@@ -4584,6 +4765,7 @@ const POI_COLORS = {
         });
       }
 
+      updateDraftMarkers();
       updateEditorUIState();
     }
 
@@ -4597,8 +4779,41 @@ const POI_COLORS = {
         const snapped = snapMapPoint(mapPoint);
 
         if (editorState.tool === 'polygon') {
+          const draftHit = findNearestDraftVertex(snapped, 10);
+          if (draftHit) {
+            editorState.dragging = { mode: 'draft', index: draftHit.index };
+            return;
+          }
+
+          const vertexHit = findNearestVertex(snapped, 10);
+          if (vertexHit) {
+            editorState.selected = vertexHit;
+            updateSelectionMarkers();
+            editorState.dragging = {
+              mode: 'vertex',
+              start: { x: snapped.x, z: snapped.z },
+              original: null
+            };
+            return;
+          }
+
+          const edgeHit = findNearestEdge(snapped, 12);
+          if (edgeHit) {
+            const list = blueprintData?.[edgeHit.layer];
+            const entry = list?.[edgeHit.index];
+            if (entry?.polygon) {
+              entry.polygon.splice(edgeHit.segmentIndex, 0, [edgeHit.point.x, edgeHit.point.z]);
+              editorState.selected = { layer: edgeHit.layer, index: edgeHit.index, vertexIndex: edgeHit.segmentIndex };
+              buildBlueprintFromData(blueprintData);
+              updateSelectionMarkers();
+              editorState.dragging = { mode: 'vertex', start: { x: snapped.x, z: snapped.z }, original: null };
+            }
+            return;
+          }
+
           editorState.draft.push([snapped.x, snapped.z]);
           updateDraftLine();
+          updateDraftMarkers();
           updateEditorStatus(`Draft points: ${editorState.draft.length}`);
           return;
         }
@@ -4634,10 +4849,27 @@ const POI_COLORS = {
       });
 
       renderer.domElement.addEventListener('pointermove', (e) => {
-        if (!editorActive() || !editorState.dragging || !editorState.selected) return;
+        if (!editorActive()) return;
         const mapPoint = getPointerMapPoint(e);
         if (!mapPoint) return;
         const snapped = snapMapPoint(mapPoint);
+
+        if (!editorState.dragging) {
+          updateEditorHover(snapped);
+          return;
+        }
+
+        if (editorState.dragging.mode === 'draft') {
+          const idx = editorState.dragging.index;
+          if (editorState.draft[idx]) {
+            editorState.draft[idx] = [snapped.x, snapped.z];
+            updateDraftLine();
+            updateDraftMarkers();
+          }
+          return;
+        }
+
+        if (!editorState.selected) return;
         const { layer, index, vertexIndex } = editorState.selected;
         const list = blueprintData?.[layer];
         if (!list || !list[index]) return;
@@ -4665,6 +4897,7 @@ const POI_COLORS = {
         } else if (e.key === 'Escape') {
           editorState.draft = [];
           updateDraftLine();
+          updateDraftMarkers();
           updateEditorStatus('Draft cancelled.');
         } else if (e.key === 'Delete' || e.key === 'Backspace') {
           deleteSelection();
