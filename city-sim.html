@@ -526,6 +526,9 @@
     import * as THREE from 'three';
     import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
     import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+    import { Line2 } from 'three/addons/lines/Line2.js';
+    import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
+    import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
     import { MapCoordMapper, createMapOverlay } from './src/mapOverlay.js';
     
     // ============================================
@@ -938,7 +941,7 @@ const POI_COLORS = {
     }
 
     function normalizeBlueprintData(data) {
-      return {
+      const normalized = {
         meta: (data && typeof data.meta === 'object' && data.meta) ? data.meta : {},
         coastlines: Array.isArray(data?.coastlines) ? data.coastlines : [],
         roads: Array.isArray(data?.roads) ? data.roads : [],
@@ -946,6 +949,12 @@ const POI_COLORS = {
         buildings: Array.isArray(data?.buildings) ? data.buildings : [],
         pois: Array.isArray(data?.pois) ? data.pois : []
       };
+      ['coastlines', 'roads', 'zones', 'buildings'].forEach((key) => {
+        normalized[key].forEach((entry) => {
+          if (!Array.isArray(entry.curves)) entry.curves = [];
+        });
+      });
+      return normalized;
     }
 
     function validateBlueprint(data) {
@@ -974,6 +983,21 @@ const POI_COLORS = {
         return area * 0.5;
       };
 
+      const validateCurves = (entry, idx, label) => {
+        if (!entry || entry.curves === undefined) return;
+        if (!Array.isArray(entry.curves) || !entry.curves.every(Number.isInteger)) {
+          errors.push(`${label}[${idx}] curves must be an array of indices.`);
+          return;
+        }
+        if (entry.polygon) {
+          entry.curves.forEach((c) => {
+            if (c < 0 || c >= entry.polygon.length) {
+              warnings.push(`${label}[${idx}] curve index ${c} is out of range.`);
+            }
+          });
+        }
+      };
+
       (data.coastlines || []).forEach((entry, idx) => {
         const poly = entry?.polygon;
         if (!Array.isArray(poly) || poly.length < 3) {
@@ -990,6 +1014,7 @@ const POI_COLORS = {
         } else if (area < 0) {
           warnings.push(`coastlines[${idx}] polygon winding is clockwise.`);
         }
+        validateCurves(entry, idx, 'coastlines');
       });
 
       (data.roads || []).forEach((entry, idx) => {
@@ -1005,6 +1030,7 @@ const POI_COLORS = {
           } else if (area < 0) {
             warnings.push(`roads[${idx}] polygon winding is clockwise.`);
           }
+          validateCurves(entry, idx, 'roads');
         } else if (entry?.polyline) {
           const line = entry.polyline;
           if (!Array.isArray(line) || line.length < 2 || !line.every(isFinitePoint)) {
@@ -1030,6 +1056,7 @@ const POI_COLORS = {
         } else if (area < 0) {
           warnings.push(`zones[${idx}] polygon winding is clockwise.`);
         }
+        validateCurves(entry, idx, 'zones');
       });
 
       (data.buildings || []).forEach((entry, idx) => {
@@ -1047,6 +1074,7 @@ const POI_COLORS = {
         } else if (area < 0) {
           warnings.push(`buildings[${idx}] polygon winding is clockwise.`);
         }
+        validateCurves(entry, idx, 'buildings');
       });
 
       (data.pois || []).forEach((entry, idx) => {
@@ -1140,7 +1168,7 @@ const POI_COLORS = {
       };
 
       (data.coastlines || []).forEach(entry => {
-        const points = entry.polygon;
+        const points = getRenderPolygonPoints(entry);
         const fillBase = Y.overlay + 0.02;
         const mesh = makeShapeMesh(points, landFillMat, fillBase);
         if (mesh) blueprintMeshGroup.add(mesh);
@@ -1150,10 +1178,11 @@ const POI_COLORS = {
 
       (data.roads || []).forEach(entry => {
         if (entry.polygon) {
+          const points = getRenderPolygonPoints(entry);
           const fillBase = Y.overlay + 0.022;
-          const mesh = makeShapeMesh(entry.polygon, roadFillMat, fillBase);
+          const mesh = makeShapeMesh(points, roadFillMat, fillBase);
           if (mesh) blueprintMeshGroup.add(mesh);
-          const outline = makeOutline(entry.polygon, 0xffffff, Y.overlay + 0.055);
+          const outline = makeOutline(points, 0xffffff, Y.overlay + 0.055);
           if (outline) blueprintOutlineGroup.add(outline);
         } else if (entry.polyline) {
           const pts = entry.polyline.map(p => new THREE.Vector3(p[0], Y.overlay + 0.055, p[1]));
@@ -1165,7 +1194,7 @@ const POI_COLORS = {
       });
 
       (data.buildings || []).forEach(entry => {
-        const points = entry.polygon;
+        const points = getRenderPolygonPoints(entry);
         const color = LEGEND_LINE_COLORS[entry.typeCode] ?? 0xffffff;
         const zoneMat = new THREE.MeshBasicMaterial({
           color,
@@ -1182,7 +1211,7 @@ const POI_COLORS = {
       });
 
       (data.zones || []).forEach(entry => {
-        const points = entry.polygon;
+        const points = getRenderPolygonPoints(entry);
         const color = LEGEND_LINE_COLORS[entry.typeCode] ?? 0xffffff;
         const zoneMat = new THREE.MeshBasicMaterial({
           color,
@@ -3869,6 +3898,11 @@ const POI_COLORS = {
       perspCamera.updateProjectionMatrix();
       
       renderer.setSize(window.innerWidth, window.innerHeight);
+
+      updateLineResolution(editorDraftLine);
+      updateLineResolution(editorDraftGlowLine);
+      updateLineResolution(editorSelectionLine);
+      updateLineResolution(editorSelectionGlowLine);
     });
     
     // ============================================
@@ -4284,30 +4318,30 @@ const POI_COLORS = {
       editorGroup.name = 'EditorGroup';
       mapOverlayGroup.add(editorGroup);
 
-      const draftMat = new THREE.LineBasicMaterial({ color: 0xffff66, transparent: true, opacity: 0.95, linewidth: 2 });
+      const draftMat = new LineMaterial({ color: 0xffff66, linewidth: 2, transparent: true, opacity: 0.95 });
       draftMat.depthTest = false;
-      editorDraftLine = new THREE.Line(new THREE.BufferGeometry(), draftMat);
+      editorDraftLine = new Line2(new LineGeometry(), draftMat);
       editorDraftLine.renderOrder = 999;
       editorDraftLine.position.y = Y.overlay + 0.07;
       editorGroup.add(editorDraftLine);
 
-      const draftGlowMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.4, linewidth: 2 });
+      const draftGlowMat = new LineMaterial({ color: 0xffffff, linewidth: 6, transparent: true, opacity: 0.35 });
       draftGlowMat.depthTest = false;
-      editorDraftGlowLine = new THREE.Line(new THREE.BufferGeometry(), draftGlowMat);
+      editorDraftGlowLine = new Line2(new LineGeometry(), draftGlowMat);
       editorDraftGlowLine.renderOrder = 998;
       editorDraftGlowLine.position.y = Y.overlay + 0.071;
       editorGroup.add(editorDraftGlowLine);
 
-      const selectMat = new THREE.LineBasicMaterial({ color: 0xffee55, transparent: true, opacity: 0.95, linewidth: 2 });
+      const selectMat = new LineMaterial({ color: 0xffee55, linewidth: 2, transparent: true, opacity: 0.95 });
       selectMat.depthTest = false;
-      editorSelectionLine = new THREE.LineLoop(new THREE.BufferGeometry(), selectMat);
+      editorSelectionLine = new Line2(new LineGeometry(), selectMat);
       editorSelectionLine.renderOrder = 999;
       editorSelectionLine.position.y = Y.overlay + 0.08;
       editorGroup.add(editorSelectionLine);
 
-      const selectGlowMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.35, linewidth: 2 });
+      const selectGlowMat = new LineMaterial({ color: 0xffffff, linewidth: 6, transparent: true, opacity: 0.35 });
       selectGlowMat.depthTest = false;
-      editorSelectionGlowLine = new THREE.LineLoop(new THREE.BufferGeometry(), selectGlowMat);
+      editorSelectionGlowLine = new Line2(new LineGeometry(), selectGlowMat);
       editorSelectionGlowLine.renderOrder = 998;
       editorSelectionGlowLine.position.y = Y.overlay + 0.081;
       editorGroup.add(editorSelectionGlowLine);
@@ -4320,12 +4354,36 @@ const POI_COLORS = {
       editorDraftVertexGroup.name = 'EditorDraftVertices';
       editorGroup.add(editorDraftVertexGroup);
       editorGroup.visible = editorState.enabled;
+
+      updateLineResolution(editorDraftLine);
+      updateLineResolution(editorDraftGlowLine);
+      updateLineResolution(editorSelectionLine);
+      updateLineResolution(editorSelectionGlowLine);
     }
 
     function updateEditorStatus(text) {
       const el = document.getElementById('editorStatus');
       if (!el) return;
       el.textContent = text;
+    }
+
+    function updateLineResolution(line) {
+      if (!line || !line.material || !line.material.resolution) return;
+      line.material.resolution.set(window.innerWidth, window.innerHeight);
+    }
+
+    function setLinePositions(line, points, closed = false) {
+      if (!line) return;
+      const verts = [];
+      points.forEach(p => {
+        verts.push(p[0], 0, p[1]);
+      });
+      if (closed && points.length > 0) {
+        const first = points[0];
+        verts.push(first[0], 0, first[1]);
+      }
+      line.geometry.setPositions(verts);
+      line.computeLineDistances();
     }
 
     function updateEditorUIState() {
@@ -4399,15 +4457,9 @@ const POI_COLORS = {
         editorDraftGlowLine.visible = false;
         return;
       }
-      const verts = points.map(p => new THREE.Vector3(p[0], 0, p[1]));
-      const geometry = new THREE.BufferGeometry().setFromPoints(verts);
-      editorDraftLine.geometry.dispose();
-      editorDraftLine.geometry = geometry;
+      setLinePositions(editorDraftLine, points, false);
       editorDraftLine.visible = true;
-
-      const glowGeometry = new THREE.BufferGeometry().setFromPoints(verts);
-      editorDraftGlowLine.geometry.dispose();
-      editorDraftGlowLine.geometry = glowGeometry;
+      setLinePositions(editorDraftGlowLine, points, false);
       editorDraftGlowLine.visible = true;
     }
 
@@ -4445,12 +4497,9 @@ const POI_COLORS = {
       const entry = list[selection.index];
       if (!entry.polygon || entry.polygon.length < 2) return;
 
-      const linePoints = entry.polygon.map(p => new THREE.Vector3(p[0], 0, p[1]));
-      const lineGeom = new THREE.BufferGeometry().setFromPoints(linePoints);
-      editorSelectionLine.geometry.dispose();
-      editorSelectionLine.geometry = lineGeom;
-      editorSelectionGlowLine.geometry.dispose();
-      editorSelectionGlowLine.geometry = lineGeom.clone();
+      const linePoints = getRenderPolygonPoints(entry);
+      setLinePositions(editorSelectionLine, linePoints, true);
+      setLinePositions(editorSelectionGlowLine, linePoints, true);
       if (selection.layer === 'roads') {
         editorSelectionLine.material.color.setHex(0xffffff);
       } else if (selection.layer === 'coastlines') {
@@ -4556,6 +4605,37 @@ const POI_COLORS = {
       return best;
     }
 
+    function getRenderPolygonPoints(entry) {
+      if (!entry?.polygon || entry.polygon.length < 2) return [];
+      const curveSet = new Set(entry.curves || []);
+      if (curveSet.size === 0) return entry.polygon;
+
+      const points = entry.polygon;
+      const count = points.length;
+      const out = [];
+      const segments = 8;
+
+      for (let i = 0; i < count; i++) {
+        const curr = points[i];
+        if (!curveSet.has(i)) {
+          out.push(curr);
+          continue;
+        }
+        const prev = points[(i - 1 + count) % count];
+        const next = points[(i + 1) % count];
+        const curve = new THREE.QuadraticBezierCurve3(
+          new THREE.Vector3(prev[0], 0, prev[1]),
+          new THREE.Vector3(curr[0], 0, curr[1]),
+          new THREE.Vector3(next[0], 0, next[1])
+        );
+        const samples = curve.getPoints(segments);
+        for (let k = 1; k < samples.length - 1; k++) {
+          out.push([samples[k].x, samples[k].z]);
+        }
+      }
+      return out;
+    }
+
     function findPolygonHit(point) {
       if (!blueprintData) return null;
       const layers = ['buildings', 'zones', 'roads', 'coastlines'];
@@ -4564,7 +4644,8 @@ const POI_COLORS = {
         for (let idx = 0; idx < list.length; idx++) {
           const entry = list[idx];
           if (!entry.polygon) continue;
-          if (pointInPolygon(point.x, point.z, entry.polygon)) {
+          const poly = getRenderPolygonPoints(entry);
+          if (pointInPolygon(point.x, point.z, poly)) {
             return { layer, index: idx, vertexIndex: null };
           }
         }
@@ -4604,13 +4685,13 @@ const POI_COLORS = {
       const polygon = editorState.draft.map(p => [p[0], p[1]]);
 
       if (editorState.targetLayer === 'zones') {
-        blueprintData.zones.push({ id, typeCode: editorState.typeCode, polygon });
+        blueprintData.zones.push({ id, typeCode: editorState.typeCode, polygon, curves: [] });
       } else if (editorState.targetLayer === 'buildings') {
-        blueprintData.buildings.push({ id, typeCode: editorState.typeCode, polygon });
+        blueprintData.buildings.push({ id, typeCode: editorState.typeCode, polygon, curves: [] });
       } else if (editorState.targetLayer === 'roads') {
-        blueprintData.roads.push({ id, polygon });
+        blueprintData.roads.push({ id, polygon, curves: [] });
       } else if (editorState.targetLayer === 'coastlines') {
-        blueprintData.coastlines.push({ id, polygon });
+        blueprintData.coastlines.push({ id, polygon, curves: [] });
       }
 
       editorState.draft = [];
@@ -4630,6 +4711,11 @@ const POI_COLORS = {
       const entry = list[index];
       if (vertexIndex !== null && entry.polygon) {
         entry.polygon.splice(vertexIndex, 1);
+        if (Array.isArray(entry.curves)) {
+          entry.curves = entry.curves
+            .filter(c => c !== vertexIndex)
+            .map(c => (c > vertexIndex ? c - 1 : c));
+        }
         if (entry.polygon.length < 3) {
           list.splice(index, 1);
           editorState.selected = null;
@@ -4802,7 +4888,10 @@ const POI_COLORS = {
             const list = blueprintData?.[edgeHit.layer];
             const entry = list?.[edgeHit.index];
             if (entry?.polygon) {
+              if (!Array.isArray(entry.curves)) entry.curves = [];
+              entry.curves = entry.curves.map(c => (c >= edgeHit.segmentIndex ? c + 1 : c));
               entry.polygon.splice(edgeHit.segmentIndex, 0, [edgeHit.point.x, edgeHit.point.z]);
+              entry.curves.push(edgeHit.segmentIndex);
               editorState.selected = { layer: edgeHit.layer, index: edgeHit.index, vertexIndex: edgeHit.segmentIndex };
               buildBlueprintFromData(blueprintData);
               updateSelectionMarkers();
@@ -4840,7 +4929,8 @@ const POI_COLORS = {
             editorState.dragging = {
               mode: 'polygon',
               start: { x: snapped.x, z: snapped.z },
-              original: entry.polygon.map(p => [p[0], p[1]])
+              original: entry.polygon.map(p => [p[0], p[1]]),
+              curves: Array.isArray(entry.curves) ? [...entry.curves] : []
             };
           }
         } else {
@@ -4881,6 +4971,9 @@ const POI_COLORS = {
           const dx = snapped.x - editorState.dragging.start.x;
           const dz = snapped.z - editorState.dragging.start.z;
           entry.polygon = editorState.dragging.original.map(p => [p[0] + dx, p[1] + dz]);
+          if (Array.isArray(entry.curves)) {
+            entry.curves = editorState.dragging.curves || entry.curves;
+          }
         }
         buildBlueprintFromData(blueprintData);
         updateSelectionMarkers();
