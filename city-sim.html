@@ -32,6 +32,15 @@
       backdrop-filter: blur(10px);
       box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
     }
+
+    .compact-panel {
+      padding: 10px 12px;
+    }
+
+    .compact-panel h3 {
+      font-size: 12px;
+      margin-bottom: 6px;
+    }
     
     .panel h3 {
       color: #64c8ff;
@@ -51,6 +60,29 @@
       font-size: 12px;
       transition: all 0.3s;
       margin: 3px;
+    }
+
+    .btn-compact {
+      padding: 6px 10px;
+      font-size: 12px;
+      border-radius: 6px;
+      margin: 2px;
+    }
+
+    .btn-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 6px;
+    }
+
+    .compact-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-top: 6px;
+      font-size: 12px;
+      color: #9fb7c9;
     }
     
     .btn:hover {
@@ -315,20 +347,28 @@
   
   <div id="ui">
     <button id="menuToggle" onclick="toggleMenu()">☰</button>
-    <div class="panel">
+    <div class="panel compact-panel">
       <h3>View Mode</h3>
-      <button class="btn active" id="btnPlan">Plan View</button>
-      <button class="btn" id="btn3D">3D View</button>
-      <button class="btn" id="btnStreet">Street View</button>
-      <button class="btn" id="btnFidelity">Fidelity Mode</button>
+      <div class="btn-grid">
+        <button class="btn btn-compact active" id="btnPlan" title="Plan View">Plan</button>
+        <button class="btn btn-compact" id="btn3D" title="3D View">3D</button>
+        <button class="btn btn-compact" id="btnStreet" title="Street View">St</button>
+        <button class="btn btn-compact" id="btnFidelity" title="Fidelity Mode">Fid</button>
+      </div>
     </div>
-    <div class="panel">
+    <div class="panel compact-panel">
       <h3>Time</h3>
-      <button class="btn active" id="btnDay">Day</button>
-      <button class="btn" id="btnNight">Night</button>
+      <div class="btn-grid">
+        <button class="btn btn-compact active" id="btnDay">Day</button>
+        <button class="btn btn-compact" id="btnNight">Night</button>
+      </div>
+      <div class="compact-row">
+        <span>Anim</span>
+        <button class="btn btn-compact active" id="btnAnim">On</button>
+      </div>
     </div>
-    <div class="panel">
-      <button class="btn" id="btnHideUI">Hide Menu</button>
+    <div class="panel compact-panel">
+      <button class="btn btn-compact" id="btnHideUI">Hide Menu</button>
     </div>
   </div>
   
@@ -3438,6 +3478,15 @@ const POI_COLORS = {
     
     let isNight = false;
     let fidelityModeActive = false;
+    let animationEnabled = true;
+    let lastRenderTime = 0;
+    const RENDER_FPS = {
+      realtime: 60,
+      realtimeIdle: 30,
+      idle: 20,
+      idleNoAnim: 8
+    };
+    const PERF_LOGGING = false;
     const fidelityState = {
       shadowEnabled: renderer.shadowMap.enabled,
       toneMappingExposure: renderer.toneMappingExposure,
@@ -3623,6 +3672,15 @@ const POI_COLORS = {
         applyFidelityShading();
       }
     }
+
+    function setAnimationEnabled(enabled) {
+      animationEnabled = !!enabled;
+      const btn = document.getElementById('btnAnim');
+      if (btn) {
+        btn.classList.toggle('active', animationEnabled);
+        btn.textContent = animationEnabled ? 'On' : 'Off';
+      }
+    }
     
     // Event listeners
     document.getElementById('btnPlan').addEventListener('click', () => setViewMode('plan'));
@@ -3631,6 +3689,7 @@ const POI_COLORS = {
     document.getElementById('btnFidelity').addEventListener('click', () => setViewMode('fidelity'));
     document.getElementById('btnDay').addEventListener('click', () => setTimeOfDay(false));
     document.getElementById('btnNight').addEventListener('click', () => setTimeOfDay(true));
+    document.getElementById('btnAnim').addEventListener('click', () => setAnimationEnabled(!animationEnabled));
     
     // Menu hide/show
     document.getElementById('btnHideUI').addEventListener('click', () => {
@@ -5023,10 +5082,19 @@ const POI_COLORS = {
       requestAnimationFrame(animate);
       
       const now = performance.now();
+      const isRealtime = (viewMode === '3d' || viewMode === 'street');
+      const targetFps = isRealtime
+        ? (animationEnabled ? RENDER_FPS.realtime : RENDER_FPS.realtimeIdle)
+        : (animationEnabled ? RENDER_FPS.idle : RENDER_FPS.idleNoAnim);
+      const minFrameMs = 1000 / targetFps;
+      if (now - lastRenderTime < minFrameMs) return;
+      lastRenderTime = now;
       const dt = Math.min(0.05, (now - lastT) / 1000);
       lastT = now;
       const time = now * 0.001;
       
+      const animActive = animationEnabled && isRealtime;
+
       // Keyboard movement (3D + street)
       if (viewMode === '3d' || viewMode === 'street') {
         let dx = 0, dz = 0;
@@ -5053,43 +5121,45 @@ const POI_COLORS = {
         }
       }
       
-      // Animate water
-      animateWater(time);
-      
-      // Animate cars
-      animateCars();
-      
-      // Animate windmills (using cached reference)
-      if (windmillsGroup) {
-        windmillsGroup.children.forEach(windmill => {
-          if (windmill.userData.blades) {
-            windmill.userData.blades.rotation.z = 
-              time * windmill.userData.rotationSpeed * 10 + windmill.userData.rotationOffset;
-          }
+      if (animActive) {
+        // Animate water
+        animateWater(time);
+        
+        // Animate cars
+        animateCars();
+        
+        // Animate windmills (using cached reference)
+        if (windmillsGroup) {
+          windmillsGroup.children.forEach(windmill => {
+            if (windmill.userData.blades) {
+              windmill.userData.blades.rotation.z =
+                time * windmill.userData.rotationSpeed * 10 + windmill.userData.rotationOffset;
+            }
+          });
+        }
+        
+        // Animate Ferris wheel (using cached reference)
+        if (ferrisWheelRef && ferrisWheelRef.userData.wheel) {
+          ferrisWheelRef.userData.wheel.rotation.y += 0.003;
+          // Keep cabins upright
+          ferrisWheelRef.userData.wheel.children.forEach(child => {
+            if (child.userData.baseAngle !== undefined) {
+              child.rotation.x = -ferrisWheelRef.userData.wheel.rotation.y;
+            }
+          });
+        }
+        
+        // Blink aircraft warning lights
+        warningLights.forEach(obj => {
+          const blink = Math.sin(time * 3) > 0;
+          obj.material.emissiveIntensity = blink ? 2 : 0.2;
+        });
+        // Cinema marquee lights twinkle
+        marqueeLights.forEach(obj => {
+          const twinkle = Math.sin(time * 5 + obj.position.x) > 0.3;
+          obj.material.emissiveIntensity = twinkle ? 1 : 0.3;
         });
       }
-      
-      // Animate Ferris wheel (using cached reference)
-      if (ferrisWheelRef && ferrisWheelRef.userData.wheel) {
-        ferrisWheelRef.userData.wheel.rotation.y += 0.003;
-        // Keep cabins upright
-        ferrisWheelRef.userData.wheel.children.forEach(child => {
-          if (child.userData.baseAngle !== undefined) {
-            child.rotation.x = -ferrisWheelRef.userData.wheel.rotation.y;
-          }
-        });
-      }
-      
-      // Blink aircraft warning lights
-      warningLights.forEach(obj => {
-        const blink = Math.sin(time * 3) > 0;
-        obj.material.emissiveIntensity = blink ? 2 : 0.2;
-      });
-      // Cinema marquee lights twinkle
-      marqueeLights.forEach(obj => {
-        const twinkle = Math.sin(time * 5 + obj.position.x) > 0.3;
-        obj.material.emissiveIntensity = twinkle ? 1 : 0.3;
-      });
       
       // Update controls
       if (controls.enabled) {
@@ -5104,9 +5174,11 @@ const POI_COLORS = {
     animate();
     
     // Optional: Performance monitoring (logs draw calls and triangles)
-    setInterval(() => {
-      console.log("drawCalls:", renderer.info.render.calls, "tris:", renderer.info.render.triangles);
-    }, 1000);
+    if (PERF_LOGGING) {
+      setInterval(() => {
+        console.log("drawCalls:", renderer.info.render.calls, "tris:", renderer.info.render.triangles);
+      }, 1000);
+    }
     
   </script>
 </body>
