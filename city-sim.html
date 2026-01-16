@@ -444,6 +444,10 @@
     </label>
     <hr style="border: none; border-top: 1px solid rgba(100, 200, 255, 0.2); margin: 10px 0;" />
     <h4 style="color: #64c8ff; font-size: 12px; margin: 8px 0 4px 0;">Blueprint</h4>
+    <label class="toggle-row">
+      <input type="checkbox" id="blueprintUseCity" />
+      <span>Use Blueprint for City</span>
+    </label>
     <div class="overlay-actions">
       <button class="btn" id="blueprintLoad" style="flex: 1; padding: 6px;">Load JSON</button>
       <button class="btn" id="blueprintSave" style="flex: 1; padding: 6px;">Save JSON</button>
@@ -657,6 +661,19 @@ const LAYERS = {
 };
 Object.values(LAYERS).forEach(g => scene.add(g));
 
+const BLUEPRINT_LAYERS = {
+  terrain: new THREE.Group(),
+  zones: new THREE.Group(),
+  roads: new THREE.Group(),
+  buildings: new THREE.Group(),
+  props: new THREE.Group(),
+  fx: new THREE.Group()
+};
+Object.values(BLUEPRINT_LAYERS).forEach(g => {
+  g.visible = false;
+  scene.add(g);
+});
+
 // ============================================
 // ZONE REGISTRY
 // ============================================
@@ -782,6 +799,9 @@ const editorState = {
   hideCity: false
 };
 
+let blueprintCityEnabled = false;
+let blueprintZoneMeshes = [];
+
 const LEGEND_LINE_COLORS = {
   Q: 0xff3b3b,
   B: 0xffe85c,
@@ -802,6 +822,57 @@ const LEGEND_LINE_COLORS = {
   '⚡': 0xfff04d,
   '💧': 0x5fd0ff
 };
+
+const LEGEND_TYPE_MAP = {
+  Q: { label: 'Residential (Quartiers)', type: 'residential', color: LEGEND_LINE_COLORS.Q, height: 22, buildable: true },
+  B: { label: 'Offices (Bureaux)', type: 'office', color: LEGEND_LINE_COLORS.B, height: 32, buildable: true },
+  ZC: { label: 'Commercial Zone', type: 'commercial', color: LEGEND_LINE_COLORS.ZC, height: 26, buildable: true },
+  J: { label: 'Gardens/Parks (Jardins)', type: 'park', color: LEGEND_LINE_COLORS.J, height: 0, buildable: false },
+  H: { label: 'Hospital (Hôpital)', type: 'hospital', color: LEGEND_LINE_COLORS.H, height: 30, buildable: true },
+  R: { label: 'Restaurant', type: 'restaurant', color: LEGEND_LINE_COLORS.R, height: 14, buildable: true },
+  PO: { label: 'Police Station', type: 'police', color: LEGEND_LINE_COLORS.PO, height: 18, buildable: true },
+  PK: { label: 'Parking', type: 'parking', color: LEGEND_LINE_COLORS.PK, height: 6, buildable: true },
+  MA: { label: 'Town Hall (Mairie)', type: 'mairie', color: LEGEND_LINE_COLORS.MA, height: 28, buildable: true },
+  'H★': { label: 'Hotel', type: 'hotel', color: LEGEND_LINE_COLORS['H★'], height: 40, buildable: true },
+  S: { label: 'Stadium (Stade)', type: 'stadium', color: LEGEND_LINE_COLORS.S, height: 12, buildable: false },
+  T: { label: 'Transport/Train', type: 'transport', color: LEGEND_LINE_COLORS.T, height: 16, buildable: true },
+  D: { label: 'Déchetterie', type: 'utilities', color: LEGEND_LINE_COLORS.D, height: 14, buildable: true },
+  Ci: { label: 'Cinema', type: 'cinema', color: LEGEND_LINE_COLORS.Ci, height: 18, buildable: true },
+  ff: { label: 'Fairground', type: 'fairground', color: LEGEND_LINE_COLORS.ff, height: 10, buildable: false },
+  P: { label: 'Port', type: 'port', color: LEGEND_LINE_COLORS.P, height: 14, buildable: true },
+  '⚡': { label: 'Electric Station', type: 'electric', color: LEGEND_LINE_COLORS['⚡'], height: 18, buildable: true },
+  '💧': { label: 'Water Treatment', type: 'water', color: LEGEND_LINE_COLORS['💧'], height: 16, buildable: true }
+};
+
+const ALLOWED_TYPE_CODES = new Set(Object.keys(LEGEND_TYPE_MAP));
+
+function normalizeTypeCode(code) {
+  if (!code) return '';
+  const trimmed = String(code).trim();
+  if (!trimmed) return '';
+  if (trimmed === '⚡' || trimmed === '💧') return trimmed;
+  const upper = trimmed.toUpperCase();
+  if (upper === 'H*' || upper === 'H★' || upper === 'HSTAR') return 'H★';
+  if (upper === 'CI') return 'Ci';
+  if (upper === 'FF') return 'ff';
+  if (upper === 'ZC') return 'ZC';
+  if (upper === 'PO') return 'PO';
+  if (upper === 'PK') return 'PK';
+  if (upper === 'MA') return 'MA';
+  if (ALLOWED_TYPE_CODES.has(upper)) return upper;
+  return trimmed;
+}
+
+function getLegendInfo(code) {
+  const normalized = normalizeTypeCode(code);
+  return LEGEND_TYPE_MAP[normalized] || {
+    label: normalized || 'Unknown',
+    type: 'other',
+    color: 0xffffff,
+    height: 18,
+    buildable: true
+  };
+}
 
 const POI_COLORS = {
   METRO_STATION: 0x2f7bff,
@@ -984,15 +1055,23 @@ const POI_COLORS = {
       const normalized = {
         meta: (data && typeof data.meta === 'object' && data.meta) ? data.meta : {},
         coastlines: Array.isArray(data?.coastlines) ? data.coastlines : [],
+        beaches: Array.isArray(data?.beaches) ? data.beaches : [],
+        sea: Array.isArray(data?.sea) ? data.sea : [],
         roads: Array.isArray(data?.roads) ? data.roads : [],
         zones: Array.isArray(data?.zones) ? data.zones : [],
         buildings: Array.isArray(data?.buildings) ? data.buildings : [],
         pois: Array.isArray(data?.pois) ? data.pois : []
       };
-      ['coastlines', 'roads', 'zones', 'buildings'].forEach((key) => {
+      ['coastlines', 'beaches', 'sea', 'roads', 'zones', 'buildings'].forEach((key) => {
         normalized[key].forEach((entry) => {
           if (!Array.isArray(entry.curves)) entry.curves = [];
         });
+      });
+      normalized.zones.forEach((entry) => {
+        if (entry && entry.typeCode) entry.typeCode = normalizeTypeCode(entry.typeCode);
+      });
+      normalized.buildings.forEach((entry) => {
+        if (entry && entry.typeCode) entry.typeCode = normalizeTypeCode(entry.typeCode);
       });
       return normalized;
     }
@@ -1008,6 +1087,11 @@ const POI_COLORS = {
 
       ['coastlines', 'roads', 'zones', 'buildings', 'pois'].forEach((key) => {
         if (!Array.isArray(data[key])) errors.push(`${key} must be an array.`);
+      });
+      ['beaches', 'sea'].forEach((key) => {
+        if (data[key] !== undefined && !Array.isArray(data[key])) {
+          errors.push(`${key} must be an array when provided.`);
+        }
       });
 
       const isFinitePoint = (pt) => Array.isArray(pt) && pt.length >= 2 &&
@@ -1057,6 +1141,44 @@ const POI_COLORS = {
         validateCurves(entry, idx, 'coastlines');
       });
 
+      (data.beaches || []).forEach((entry, idx) => {
+        const poly = entry?.polygon;
+        if (!Array.isArray(poly) || poly.length < 3) {
+          errors.push(`beaches[${idx}] polygon must have >= 3 points.`);
+          return;
+        }
+        if (!poly.every(isFinitePoint)) {
+          errors.push(`beaches[${idx}] polygon has invalid points.`);
+          return;
+        }
+        const area = polygonArea(poly);
+        if (Math.abs(area) < 0.001) {
+          errors.push(`beaches[${idx}] polygon area is near zero.`);
+        } else if (area < 0) {
+          warnings.push(`beaches[${idx}] polygon winding is clockwise.`);
+        }
+        validateCurves(entry, idx, 'beaches');
+      });
+
+      (data.sea || []).forEach((entry, idx) => {
+        const poly = entry?.polygon;
+        if (!Array.isArray(poly) || poly.length < 3) {
+          errors.push(`sea[${idx}] polygon must have >= 3 points.`);
+          return;
+        }
+        if (!poly.every(isFinitePoint)) {
+          errors.push(`sea[${idx}] polygon has invalid points.`);
+          return;
+        }
+        const area = polygonArea(poly);
+        if (Math.abs(area) < 0.001) {
+          errors.push(`sea[${idx}] polygon area is near zero.`);
+        } else if (area < 0) {
+          warnings.push(`sea[${idx}] polygon winding is clockwise.`);
+        }
+        validateCurves(entry, idx, 'sea');
+      });
+
       (data.roads || []).forEach((entry, idx) => {
         if (entry?.polygon) {
           const poly = entry.polygon;
@@ -1085,6 +1207,10 @@ const POI_COLORS = {
         if (!entry?.typeCode || typeof entry.typeCode !== 'string') {
           errors.push(`zones[${idx}] typeCode is required.`);
         }
+        const normalized = normalizeTypeCode(entry?.typeCode);
+        if (normalized && !ALLOWED_TYPE_CODES.has(normalized)) {
+          warnings.push(`zones[${idx}] typeCode "${entry.typeCode}" is unknown.`);
+        }
         const poly = entry?.polygon;
         if (!Array.isArray(poly) || poly.length < 3 || !poly.every(isFinitePoint)) {
           errors.push(`zones[${idx}] polygon must have >= 3 valid points.`);
@@ -1102,6 +1228,10 @@ const POI_COLORS = {
       (data.buildings || []).forEach((entry, idx) => {
         if (!entry?.typeCode || typeof entry.typeCode !== 'string') {
           errors.push(`buildings[${idx}] typeCode is required.`);
+        }
+        const normalized = normalizeTypeCode(entry?.typeCode);
+        if (normalized && !ALLOWED_TYPE_CODES.has(normalized)) {
+          warnings.push(`buildings[${idx}] typeCode "${entry.typeCode}" is unknown.`);
         }
         const poly = entry?.polygon;
         if (!Array.isArray(poly) || poly.length < 3 || !poly.every(isFinitePoint)) {
@@ -1150,6 +1280,7 @@ const POI_COLORS = {
         }
         blueprintData = normalizeBlueprintData(raw);
         buildBlueprintFromData(blueprintData);
+        rebuildBlueprintCity();
         setBlueprintStatus('Blueprint status: loaded from file.');
       } catch (error) {
         console.warn('Blueprint load failed:', error);
@@ -1235,7 +1366,8 @@ const POI_COLORS = {
 
       (data.buildings || []).forEach(entry => {
         const points = getRenderPolygonPoints(entry);
-        const color = LEGEND_LINE_COLORS[entry.typeCode] ?? 0xffffff;
+        const code = normalizeTypeCode(entry.typeCode);
+        const color = LEGEND_LINE_COLORS[code] ?? 0xffffff;
         const zoneMat = new THREE.MeshBasicMaterial({
           color,
           transparent: true,
@@ -1252,7 +1384,8 @@ const POI_COLORS = {
 
       (data.zones || []).forEach(entry => {
         const points = getRenderPolygonPoints(entry);
-        const color = LEGEND_LINE_COLORS[entry.typeCode] ?? 0xffffff;
+        const code = normalizeTypeCode(entry.typeCode);
+        const color = LEGEND_LINE_COLORS[code] ?? 0xffffff;
         const zoneMat = new THREE.MeshBasicMaterial({
           color,
           transparent: true,
@@ -1277,6 +1410,177 @@ const POI_COLORS = {
       });
 
       updateDebugVisibility();
+    }
+
+    function clearBlueprintCity() {
+      Object.values(BLUEPRINT_LAYERS).forEach(group => resetGroup(group));
+      blueprintZoneMeshes = [];
+    }
+
+    function buildBlueprintCity(data) {
+      if (!data) return;
+      clearBlueprintCity();
+
+      const waterMat = new THREE.MeshStandardMaterial({
+        color: COLORS.sea,
+        roughness: 0.25,
+        metalness: 0.4,
+        transparent: true,
+        opacity: 0.95
+      });
+
+      if (Array.isArray(data.sea) && data.sea.length > 0) {
+        data.sea.forEach(entry => {
+          const points = getRenderPolygonPoints(entry);
+          const mesh = createPolygonWorld(points, COLORS.sea, Y.terrainSea, waterMat);
+          if (mesh) BLUEPRINT_LAYERS.terrain.add(mesh);
+        });
+      } else {
+        const waterGeo = new THREE.PlaneGeometry(MAP_WIDTH, MAP_HEIGHT);
+        waterGeo.rotateX(-Math.PI / 2);
+        const water = new THREE.Mesh(waterGeo, waterMat);
+        water.position.y = Y.terrainSea;
+        water.receiveShadow = false;
+        BLUEPRINT_LAYERS.terrain.add(water);
+      }
+
+      (data.beaches || []).forEach(entry => {
+        const points = getRenderPolygonPoints(entry);
+        const mesh = createPolygonWorld(points, COLORS.beach, Y.beach);
+        if (mesh) BLUEPRINT_LAYERS.terrain.add(mesh);
+      });
+
+      (data.coastlines || []).forEach(entry => {
+        const points = getRenderPolygonPoints(entry);
+        const mesh = createPolygonWorld(points, COLORS.land, Y.land);
+        if (mesh) BLUEPRINT_LAYERS.terrain.add(mesh);
+      });
+
+      const roadMat = new THREE.MeshStandardMaterial({
+        color: COLORS.road,
+        roughness: 0.9,
+        metalness: 0.1
+      });
+
+      (data.roads || []).forEach(entry => {
+        if (entry.polygon) {
+          const points = getRenderPolygonPoints(entry);
+          const mesh = createPolygonWorld(points, COLORS.road, Y.roads, roadMat);
+          if (mesh) BLUEPRINT_LAYERS.roads.add(mesh);
+        } else if (entry.polyline) {
+          const width = Number.isFinite(entry.width) ? entry.width : 12;
+          const roadGroup = createRoadSegmentsFromPolyline(entry.polyline, width);
+          BLUEPRINT_LAYERS.roads.add(roadGroup);
+        }
+      });
+
+      (data.zones || []).forEach(entry => {
+        const info = getLegendInfo(entry.typeCode);
+        const points = getRenderPolygonPoints(entry);
+        const mesh = createPolygonWorld(points, info.color, Y.zones);
+        if (!mesh) return;
+        mesh.userData = { label: normalizeTypeCode(entry.typeCode), type: info.type };
+        BLUEPRINT_LAYERS.zones.add(mesh);
+        blueprintZoneMeshes.push(mesh);
+      });
+
+      (data.buildings || []).forEach(entry => {
+        const info = getLegendInfo(entry.typeCode);
+        if (!info.buildable) return;
+        const points = getRenderPolygonPoints(entry);
+        const height = Number.isFinite(entry.height) ? entry.height : info.height;
+        const mesh = createBuildingWorld(points, info.color, height, Y.buildings);
+        if (mesh) {
+          mesh.userData = { label: normalizeTypeCode(entry.typeCode), type: info.type };
+          BLUEPRINT_LAYERS.buildings.add(mesh);
+        }
+      });
+
+      createBlueprintParkTrees(data);
+
+      const poiGeo = new THREE.SphereGeometry(5, 10, 10);
+      (data.pois || []).forEach(entry => {
+        if (!entry.position || entry.position.length < 2) return;
+        const color = POI_COLORS[entry.type] ?? 0x00ff88;
+        const marker = new THREE.Mesh(poiGeo, new THREE.MeshStandardMaterial({ color }));
+        marker.position.set(entry.position[0], Y.buildings + 3, entry.position[1]);
+        marker.userData = { type: entry.type };
+        BLUEPRINT_LAYERS.props.add(marker);
+      });
+    }
+
+    function createBlueprintParkTrees(data) {
+      const parkZones = (data.zones || []).filter(entry => normalizeTypeCode(entry.typeCode) === 'J');
+      if (parkZones.length === 0) return;
+
+      const roadPolys = (data.roads || [])
+        .filter(entry => entry.polygon)
+        .map(entry => getRenderPolygonPoints(entry));
+
+      const roadLines = (data.roads || [])
+        .filter(entry => entry.polyline)
+        .map(entry => ({
+          points: entry.polyline,
+          width: Number.isFinite(entry.width) ? entry.width : 12
+        }));
+
+      parkZones.forEach(zone => {
+        const points = getRenderPolygonPoints(zone);
+        if (!points || points.length < 3) return;
+
+        let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+        points.forEach(([x, z]) => {
+          minX = Math.min(minX, x);
+          maxX = Math.max(maxX, x);
+          minZ = Math.min(minZ, z);
+          maxZ = Math.max(maxZ, z);
+        });
+
+        const area = Math.max(0, (maxX - minX) * (maxZ - minZ));
+        const treeCount = Math.min(35, Math.floor(area / 800));
+        for (let i = 0; i < treeCount; i++) {
+          const x = minX + rng() * (maxX - minX);
+          const z = minZ + rng() * (maxZ - minZ);
+          if (!pointInPolygon(x, z, points)) continue;
+
+          const inRoadPoly = roadPolys.some(poly => pointInPolygon(x, z, poly));
+          if (inRoadPoly) continue;
+
+          const nearRoadLine = roadLines.some(line => {
+            for (let j = 0; j < line.points.length - 1; j++) {
+              const a = line.points[j];
+              const b = line.points[j + 1];
+              const res = distancePointToSegment({ x, z }, a, b);
+              if (res.dist2 < (line.width * 0.6) * (line.width * 0.6)) return true;
+            }
+            return false;
+          });
+          if (nearRoadLine) continue;
+
+          const tree = createTree();
+          tree.position.set(x, Y.zones, z);
+          tree.scale.setScalar(0.4 + rng() * 0.4);
+          BLUEPRINT_LAYERS.props.add(tree);
+        }
+      });
+    }
+
+    function rebuildBlueprintCity() {
+      if (!blueprintCityEnabled) return;
+      if (!blueprintData) return;
+      buildBlueprintCity(blueprintData);
+      setCityLayerVisibility();
+    }
+
+    function setBlueprintCityEnabled(enabled) {
+      blueprintCityEnabled = !!enabled;
+      const toggle = document.getElementById('blueprintUseCity');
+      if (toggle) toggle.checked = blueprintCityEnabled;
+      if (blueprintCityEnabled) {
+        if (!blueprintData) loadBlueprintData();
+        rebuildBlueprintCity();
+      }
+      setCityLayerVisibility();
     }
     
     // Rebuild a single zone (for editing)
@@ -1421,6 +1725,73 @@ const POI_COLORS = {
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       return mesh;
+    }
+
+    function createPolygonWorld(points, color, y = 0, materialOverride = null) {
+      const worldPoints = points.map(([x, z]) => new THREE.Vector2(x, -z));
+      const shape = new THREE.Shape(worldPoints);
+      const geometry = new THREE.ShapeGeometry(shape);
+      geometry.rotateX(-Math.PI / 2);
+      const material = materialOverride || new THREE.MeshStandardMaterial({
+        color,
+        side: THREE.DoubleSide,
+        roughness: 0.85,
+        metalness: 0.1
+      });
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.y = y;
+      mesh.receiveShadow = true;
+      return mesh;
+    }
+
+    function createBuildingWorld(points, color, height, y = 0) {
+      const worldPoints = points.map(([x, z]) => new THREE.Vector2(x, -z));
+      const shape = new THREE.Shape(worldPoints);
+      const extrudeSettings = {
+        steps: 1,
+        depth: height,
+        bevelEnabled: false
+      };
+      const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+      geometry.rotateX(-Math.PI / 2);
+      const material = new THREE.MeshStandardMaterial({
+        color,
+        roughness: 0.7,
+        metalness: 0.2
+      });
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.y = y;
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      return mesh;
+    }
+
+    function createRoadSegmentsFromPolyline(points, width = 12) {
+      const group = new THREE.Group();
+      if (!points || points.length < 2) return group;
+      const mat = new THREE.MeshStandardMaterial({
+        color: COLORS.road,
+        roughness: 0.9,
+        metalness: 0.1
+      });
+      for (let i = 0; i < points.length - 1; i++) {
+        const [x1, z1] = points[i];
+        const [x2, z2] = points[i + 1];
+        const dx = x2 - x1;
+        const dz = z2 - z1;
+        const length = Math.hypot(dx, dz);
+        if (length < 0.001) continue;
+        const geo = new THREE.BoxGeometry(length, 0.3, width);
+        const road = new THREE.Mesh(geo, mat);
+        road.position.set((x1 + x2) / 2, Y.roads, (z1 + z2) / 2);
+        road.rotation.y = Math.atan2(dz, dx);
+        road.receiveShadow = true;
+        road.material.polygonOffset = true;
+        road.material.polygonOffsetFactor = -1;
+        road.material.polygonOffsetUnits = -1;
+        group.add(road);
+      }
+      return group;
     }
     
     // Create building with properly attached windows
@@ -3451,6 +3822,7 @@ const POI_COLORS = {
     }
     
     function animateWater(time) {
+      if (blueprintCityEnabled) return;
       if (!waterMesh || waterOriginalPositions.length === 0) return;
       
       // Skip work on most frames (cuts CPU cost a lot)
@@ -3494,6 +3866,26 @@ const POI_COLORS = {
       fxVisible: LAYERS.fx.visible
     };
 
+    function setCityLayerVisibility() {
+      const showLegacy = !blueprintCityEnabled && !editorState.hideCity;
+      const showBlueprint = blueprintCityEnabled && !editorState.hideCity;
+      const showProps = !fidelityModeActive;
+
+      LAYERS.terrain.visible = showLegacy;
+      LAYERS.zones.visible = showLegacy;
+      LAYERS.roads.visible = showLegacy;
+      LAYERS.buildings.visible = showLegacy;
+      LAYERS.props.visible = showLegacy && showProps;
+      LAYERS.fx.visible = showLegacy && showProps;
+
+      BLUEPRINT_LAYERS.terrain.visible = showBlueprint;
+      BLUEPRINT_LAYERS.zones.visible = showBlueprint;
+      BLUEPRINT_LAYERS.roads.visible = showBlueprint;
+      BLUEPRINT_LAYERS.buildings.visible = showBlueprint;
+      BLUEPRINT_LAYERS.props.visible = showBlueprint && showProps;
+      BLUEPRINT_LAYERS.fx.visible = showBlueprint && showProps;
+    }
+
     function applyFidelityShading() {
       ambientLight.intensity = 0.85;
       sunLight.intensity = 0.2;
@@ -3507,22 +3899,17 @@ const POI_COLORS = {
         if (!wasActive) {
           fidelityState.shadowEnabled = renderer.shadowMap.enabled;
           fidelityState.toneMappingExposure = renderer.toneMappingExposure;
-          fidelityState.propsVisible = LAYERS.props.visible;
-          fidelityState.fxVisible = LAYERS.fx.visible;
         }
 
         renderer.shadowMap.enabled = false;
         renderer.toneMappingExposure = 1.0;
         applyFidelityShading();
-        LAYERS.props.visible = false;
-        LAYERS.fx.visible = false;
       } else if (wasActive) {
         renderer.shadowMap.enabled = fidelityState.shadowEnabled;
         renderer.toneMappingExposure = fidelityState.toneMappingExposure;
-        LAYERS.props.visible = fidelityState.propsVisible;
-        LAYERS.fx.visible = fidelityState.fxVisible;
         setTimeOfDay(isNight);
       }
+      setCityLayerVisibility();
     }
     
     function updateOverlayVisibility() {
@@ -3600,6 +3987,7 @@ const POI_COLORS = {
         updateEditorStatus(viewMode === 'fidelity' ? 'Editor ready.' : 'Editor paused (switch to Fidelity Mode).');
       }
       if (editorGroup) editorGroup.visible = editorState.enabled && viewMode === 'fidelity';
+      setCityLayerVisibility();
     }
     
     function setTimeOfDay(night) {
@@ -3854,34 +4242,16 @@ const POI_COLORS = {
       mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
       
       raycaster.setFromCamera(mouse, activeCamera);
-      const intersects = raycaster.intersectObjects(zones);
+      const zonesToTest = blueprintCityEnabled ? blueprintZoneMeshes : zones;
+      const intersects = raycaster.intersectObjects(zonesToTest);
       
       if (intersects.length > 0) {
         const zone = intersects[0].object;
         const data = zone.userData;
         if (data.label) {
-          const labels = {
-            Q: 'Residential (Quartiers)',
-            B: 'Offices (Bureaux)',
-            ZC: 'Commercial Zone',
-            J: 'Gardens/Parks (Jardins)',
-            H: 'Hospital (Hôpital)',
-            R: 'Restaurant',
-            PO: 'Police Station',
-            PK: 'Parking',
-            MA: 'Town Hall (Mairie)',
-            'H★': 'Hotel',
-            S: 'Stadium (Stade)',
-            T: 'Transport/Train Station',
-            D: 'Rubbish Tip (Déchetterie)',
-            Ci: 'Cinema',
-            ff: 'Fairground',
-            P: 'Port',
-            '⚡': 'Electric Station',
-            '💧': 'Water Treatment'
-          };
+          const info = getLegendInfo(data.label);
           document.getElementById('zoneInfo').textContent = 
-            `${data.label}: ${labels[data.label] || data.type}`;
+            `${normalizeTypeCode(data.label)}: ${info.label || data.type}`;
         }
       } else {
         document.getElementById('zoneInfo').textContent = 'Hover over zones for info';
@@ -4290,6 +4660,7 @@ const POI_COLORS = {
       const copyBtn = document.getElementById('blueprintCopy');
       const validateBtn = document.getElementById('blueprintValidate');
       const jsonField = document.getElementById('blueprintJson');
+      const useCityToggle = document.getElementById('blueprintUseCity');
 
       if (!loadBtn || !saveBtn || !copyBtn || !validateBtn || !jsonField) return;
 
@@ -4360,11 +4731,19 @@ const POI_COLORS = {
           if (!result.ok) return;
           blueprintData = normalizeBlueprintData(parsed);
           buildBlueprintFromData(blueprintData);
+          rebuildBlueprintCity();
           setBlueprintStatus('Blueprint status: loaded from textarea.');
         } catch (e) {
           setBlueprintStatus('Blueprint load: invalid JSON.', false);
         }
       });
+
+      if (useCityToggle) {
+        useCityToggle.checked = blueprintCityEnabled;
+        useCityToggle.addEventListener('change', (e) => {
+          setBlueprintCityEnabled(!!e.target.checked);
+        });
+      }
     }
 
     function editorActive() {
@@ -4915,13 +5294,7 @@ const POI_COLORS = {
         hideCityToggle.checked = editorState.hideCity;
         hideCityToggle.addEventListener('change', (e) => {
           editorState.hideCity = !!e.target.checked;
-          const visible = !editorState.hideCity;
-          LAYERS.terrain.visible = visible;
-          LAYERS.zones.visible = visible;
-          LAYERS.roads.visible = visible;
-          LAYERS.buildings.visible = visible;
-          LAYERS.props.visible = visible;
-          LAYERS.fx.visible = visible;
+          setCityLayerVisibility();
         });
       }
 
