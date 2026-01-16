@@ -727,24 +727,24 @@ const editorState = {
 };
 
 const LEGEND_LINE_COLORS = {
-  Q: 0xe94b4b,
-  B: 0xf2d14b,
-  ZC: 0x3f6dd1,
-  J: 0x38b26a,
-  H: 0x9aa0a8,
-  R: 0xff7ca6,
-  PO: 0x8b5e3b,
-  PK: 0xf0a038,
-  MA: 0x9c7b59,
-  'H★': 0x2e8b57,
-  S: 0xe6e6e6,
-  T: 0x7fd18b,
-  D: 0x7f7f7f,
-  Ci: 0xb26bd6,
-  ff: 0xd4a05b,
-  P: 0x5c9ac8,
-  '⚡': 0xffd32a,
-  '💧': 0x3fb3ff
+  Q: 0xff3b3b,
+  B: 0xffe85c,
+  ZC: 0x2f7dff,
+  J: 0x30ff7a,
+  H: 0xc0c6d0,
+  R: 0xff5fa3,
+  PO: 0xb0723f,
+  PK: 0xffb347,
+  MA: 0xc08a62,
+  'H★': 0x32c46a,
+  S: 0xffffff,
+  T: 0x9bffb0,
+  D: 0xb0b0b0,
+  Ci: 0xd07bff,
+  ff: 0xffc06a,
+  P: 0x7fbfff,
+  '⚡': 0xfff04d,
+  '💧': 0x5fd0ff
 };
 
 const POI_COLORS = {
@@ -1104,7 +1104,7 @@ const POI_COLORS = {
         if (!points || points.length < 3) return null;
         const shape = new THREE.Shape(points.map(p => new THREE.Vector2(p[0], p[1])));
         const geometry = new THREE.ShapeGeometry(shape);
-        geometry.rotateX(-Math.PI / 2);
+        geometry.rotateX(Math.PI / 2);
         const mesh = new THREE.Mesh(geometry, material);
         mesh.position.y = y;
         mesh.renderOrder = 997;
