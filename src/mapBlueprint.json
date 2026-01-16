@@ -47,6 +47,7 @@
       ]
     }
   ],
+  "buildings": [],
   "pois": [
     {
       "id": "demo-metro",
