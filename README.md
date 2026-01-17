@@ -47,7 +47,9 @@ Supported `typeCode` values:
 ## Fidelity Mode Editor
 - Switch to Fidelity Mode, enable the Editor.
 - Draw Polygon tool: click to place points, Enter to close, Esc to cancel.
+- Draw Line tool: use for Transit polylines (metro/train/hyperloop).
 - Select tool: move vertices, delete vertices, or delete polygons.
 - Add POI tool: places a point marker.
 - Snap options: grid or pixel snapping (off by default).
 - Use "Use Blueprint for City" to render the blueprint-driven city.
+- Layers available: coastlines, roads, zones, buildings, beaches, sea, transit.

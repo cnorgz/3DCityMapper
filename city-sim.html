@@ -151,6 +151,46 @@
       cursor: pointer;
       font-size: 12px;
     }
+
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(5, 8, 20, 0.7);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 300;
+    }
+
+    .modal {
+      width: min(520px, 92vw);
+      max-height: 80vh;
+      overflow: auto;
+      background: rgba(15, 15, 35, 0.95);
+      border: 1px solid rgba(100, 200, 255, 0.3);
+      border-radius: 12px;
+      padding: 16px 18px;
+      color: #e0e0e0;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+    }
+
+    .modal h3 {
+      color: #64c8ff;
+      font-size: 14px;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .modal ol {
+      padding-left: 18px;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .modal .btn {
+      margin-top: 10px;
+    }
     
     #overlayControls .toggle-row {
       display: flex;
@@ -370,6 +410,9 @@
     <div class="panel compact-panel">
       <button class="btn btn-compact" id="btnHideUI">Hide Menu</button>
     </div>
+    <div class="panel compact-panel">
+      <button class="btn btn-compact" id="btnFidelityHelp">Fidelity Steps</button>
+    </div>
   </div>
   
   <div id="info" class="panel">
@@ -469,6 +512,7 @@
       <select id="editorTool">
         <option value="select">Select</option>
         <option value="polygon">Draw Polygon</option>
+        <option value="polyline">Draw Line</option>
         <option value="poi">Add POI</option>
       </select>
       <span></span>
@@ -480,6 +524,9 @@
         <option value="zones">Zones</option>
         <option value="roads">Roads</option>
         <option value="coastlines">Coastlines</option>
+        <option value="beaches">Beaches</option>
+        <option value="sea">Sea</option>
+        <option value="transit">Transit</option>
       </select>
       <select id="editorTypeCode">
         <option value="Q">Q</option>
@@ -501,6 +548,15 @@
         <option value="⚡">⚡</option>
         <option value="💧">💧</option>
       </select>
+    </div>
+    <div class="control-row">
+      <label for="editorTransitType">Transit</label>
+      <select id="editorTransitType">
+        <option value="METRO">METRO</option>
+        <option value="TRAIN">TRAIN</option>
+        <option value="HYPERLOOP">HYPERLOOP</option>
+      </select>
+      <span></span>
     </div>
     <div class="control-row">
       <label for="editorPoiType">POI Type</label>
@@ -550,6 +606,24 @@
   <div id="zoomControls">
     <button class="zoom-btn" id="zoomIn">+</button>
     <button class="zoom-btn" id="zoomOut">−</button>
+  </div>
+
+  <div class="modal-overlay" id="fidelityModal">
+    <div class="modal">
+      <h3>Fidelity Trace Steps</h3>
+      <ol>
+        <li>Turn on Overlay and calibrate Offset X/Z, Rotation, and Scale.</li>
+        <li>Switch to Fidelity Mode and enable the Editor.</li>
+        <li>Trace Coastlines (mainland + island) first.</li>
+        <li>Trace Roads next (tarmac shapes as polygons).</li>
+        <li>Trace Zones and Buildings using legend codes.</li>
+        <li>Add POIs (metro, train, port, turbines, school).</li>
+        <li>Toggle Blueprint Outlines to verify alignment.</li>
+        <li>Save/Copy the Blueprint JSON for backup.</li>
+        <li>Enable “Use Blueprint for City” to view generated 3D.</li>
+      </ol>
+      <button class="btn" id="closeFidelityHelp">Close</button>
+    </div>
   </div>
   
   <script>
@@ -783,16 +857,17 @@ const debugSettings = {
   showBlueprintOutlines: false
 };
 
-const editorState = {
-  enabled: false,
-  tool: 'select',
-  targetLayer: 'zones',
-  typeCode: 'Q',
-  poiType: 'METRO_STATION',
-  snapGrid: false,
-  snapPixels: false,
-  pixelStep: 10,
-  draft: [],
+  const editorState = {
+    enabled: false,
+    tool: 'select',
+    targetLayer: 'zones',
+    typeCode: 'Q',
+    poiType: 'METRO_STATION',
+    transitType: 'METRO',
+    snapGrid: false,
+    snapPixels: false,
+    pixelStep: 10,
+    draft: [],
   selected: null,
   dragging: null,
   hover: null,
@@ -1082,6 +1157,9 @@ const TRANSIT_STYLES = {
       normalized.buildings.forEach((entry) => {
         if (entry && entry.typeCode) entry.typeCode = normalizeTypeCode(entry.typeCode);
       });
+      normalized.transit.forEach((entry) => {
+        if (entry && entry.type) entry.type = String(entry.type).toUpperCase();
+      });
       return normalized;
     }
 
@@ -1338,6 +1416,22 @@ const TRANSIT_STYLES = {
         depthTest: false,
         side: THREE.DoubleSide
       });
+      const beachFillMat = new THREE.MeshBasicMaterial({
+        color: COLORS.beach,
+        transparent: true,
+        opacity: 0.18,
+        depthWrite: false,
+        depthTest: false,
+        side: THREE.DoubleSide
+      });
+      const seaFillMat = new THREE.MeshBasicMaterial({
+        color: COLORS.sea,
+        transparent: true,
+        opacity: 0.16,
+        depthWrite: false,
+        depthTest: false,
+        side: THREE.DoubleSide
+      });
       const roadFillMat = new THREE.MeshBasicMaterial({
         color: 0x222222,
         transparent: true,
@@ -1378,6 +1472,22 @@ const TRANSIT_STYLES = {
         if (outline) blueprintOutlineGroup.add(outline);
       });
 
+      (data.beaches || []).forEach(entry => {
+        const points = getRenderPolygonPoints(entry);
+        const mesh = makeShapeMesh(points, beachFillMat, Y.overlay + 0.019);
+        if (mesh) blueprintMeshGroup.add(mesh);
+        const outline = makeOutline(points, 0xffd27a, Y.overlay + 0.048);
+        if (outline) blueprintOutlineGroup.add(outline);
+      });
+
+      (data.sea || []).forEach(entry => {
+        const points = getRenderPolygonPoints(entry);
+        const mesh = makeShapeMesh(points, seaFillMat, Y.overlay + 0.018);
+        if (mesh) blueprintMeshGroup.add(mesh);
+        const outline = makeOutline(points, 0x3aa6ff, Y.overlay + 0.047);
+        if (outline) blueprintOutlineGroup.add(outline);
+      });
+
       (data.roads || []).forEach(entry => {
         if (entry.polygon) {
           const points = getRenderPolygonPoints(entry);
@@ -1392,6 +1502,34 @@ const TRANSIT_STYLES = {
           const line = new THREE.Line(geometry, roadOutlineMat);
           line.renderOrder = 999;
           blueprintOutlineGroup.add(line);
+        }
+      });
+
+      (data.transit || []).forEach(entry => {
+        if (!entry.polyline || entry.polyline.length < 2) return;
+        const type = String(entry.type || '').toUpperCase();
+        const style = TRANSIT_STYLES[type] || TRANSIT_STYLES.METRO;
+        const pts = entry.polyline.map(p => new THREE.Vector3(p[0], Y.overlay + 0.058, p[1]));
+        const geometry = new THREE.BufferGeometry().setFromPoints(pts);
+        const mat = new THREE.LineBasicMaterial({ color: style.color });
+        mat.depthTest = false;
+        const line = new THREE.Line(geometry, mat);
+        line.renderOrder = 999;
+        blueprintOutlineGroup.add(line);
+
+        if (type === 'METRO') {
+          const stations = Array.isArray(entry.stations)
+            ? entry.stations
+            : (data.pois || [])
+              .filter(poi => poi.type === 'METRO_STATION')
+              .map(poi => poi.position);
+          const stationGeo = new THREE.SphereGeometry(3, 10, 10);
+          stations.forEach((pos) => {
+            if (!pos || pos.length < 2) return;
+            const station = new THREE.Mesh(stationGeo, new THREE.MeshBasicMaterial({ color: style.color }));
+            station.position.set(pos[0], Y.overlay + 0.06, pos[1]);
+            blueprintOutlineGroup.add(station);
+          });
         }
       });
 
@@ -1517,8 +1655,14 @@ const TRANSIT_STYLES = {
           BLUEPRINT_LAYERS.props.add(chain);
         }
 
-        if (type === 'METRO' && Array.isArray(entry.stations)) {
-          entry.stations.forEach((pos) => {
+        if (type === 'METRO') {
+          const stations = Array.isArray(entry.stations)
+            ? entry.stations
+            : (data.pois || [])
+              .filter(poi => poi.type === 'METRO_STATION')
+              .map(poi => poi.position);
+          stations.forEach((pos) => {
+            if (!pos || pos.length < 2) return;
             const marker = createMetroStationMarker();
             marker.position.set(pos[0], Y.buildings + 4, pos[1]);
             BLUEPRINT_LAYERS.props.add(marker);
@@ -4274,6 +4418,21 @@ const TRANSIT_STYLES = {
     document.getElementById('btnHideUI').addEventListener('click', () => {
       document.getElementById('ui').classList.add('hidden');
     });
+
+    const fidelityModal = document.getElementById('fidelityModal');
+    const fidelityHelpBtn = document.getElementById('btnFidelityHelp');
+    const fidelityHelpClose = document.getElementById('closeFidelityHelp');
+    if (fidelityHelpBtn && fidelityModal && fidelityHelpClose) {
+      fidelityHelpBtn.addEventListener('click', () => {
+        fidelityModal.style.display = 'flex';
+      });
+      fidelityHelpClose.addEventListener('click', () => {
+        fidelityModal.style.display = 'none';
+      });
+      fidelityModal.addEventListener('click', (e) => {
+        if (e.target === fidelityModal) fidelityModal.style.display = 'none';
+      });
+    }
     
     // Touch Controls - Virtual Joystick
     const joystick = document.getElementById('joystick');
@@ -5034,8 +5193,12 @@ const TRANSIT_STYLES = {
       const layerSelect = document.getElementById('editorLayer');
       const typeSelect = document.getElementById('editorTypeCode');
       const poiSelect = document.getElementById('editorPoiType');
+      const transitSelect = document.getElementById('editorTransitType');
       if (toolSelect) toolSelect.value = editorState.tool;
-      if (layerSelect) layerSelect.value = editorState.targetLayer;
+      if (layerSelect) {
+        layerSelect.value = editorState.targetLayer;
+        layerSelect.disabled = editorState.tool === 'polyline';
+      }
       if (typeSelect) {
         typeSelect.disabled = (editorState.targetLayer !== 'zones' && editorState.targetLayer !== 'buildings');
         typeSelect.value = editorState.typeCode;
@@ -5043,6 +5206,10 @@ const TRANSIT_STYLES = {
       if (poiSelect) {
         poiSelect.disabled = (editorState.tool !== 'poi');
         poiSelect.value = editorState.poiType;
+      }
+      if (transitSelect) {
+        transitSelect.disabled = (editorState.targetLayer !== 'transit' && editorState.tool !== 'polyline');
+        transitSelect.value = editorState.transitType;
       }
     }
 
@@ -5092,6 +5259,13 @@ const TRANSIT_STYLES = {
         editorDraftLine.material.color.setHex(0xffffff);
       } else if (editorState.targetLayer === 'coastlines') {
         editorDraftLine.material.color.setHex(0x00f0ff);
+      } else if (editorState.targetLayer === 'beaches') {
+        editorDraftLine.material.color.setHex(0xffd27a);
+      } else if (editorState.targetLayer === 'sea') {
+        editorDraftLine.material.color.setHex(0x3aa6ff);
+      } else if (editorState.targetLayer === 'transit') {
+        const style = TRANSIT_STYLES[editorState.transitType] || TRANSIT_STYLES.METRO;
+        editorDraftLine.material.color.setHex(style.color);
       } else {
         editorDraftLine.material.color.setHex(color);
       }
@@ -5138,29 +5312,48 @@ const TRANSIT_STYLES = {
       const list = blueprintData[selection.layer];
       if (!list || !list[selection.index]) return;
       const entry = list[selection.index];
-      if (!entry.polygon || entry.polygon.length < 2) return;
+      const linePoints = entry.polyline ? entry.polyline : getRenderPolygonPoints(entry);
+      if (!linePoints || linePoints.length < 2) return;
+      const isClosed = !entry.polyline;
 
-      const linePoints = getRenderPolygonPoints(entry);
-      setLinePositions(editorSelectionLine, linePoints, true);
-      setLinePositions(editorSelectionGlowLine, linePoints, true);
+      setLinePositions(editorSelectionLine, linePoints, isClosed);
+      setLinePositions(editorSelectionGlowLine, linePoints, isClosed);
+
       if (selection.layer === 'roads') {
         editorSelectionLine.material.color.setHex(0xffffff);
       } else if (selection.layer === 'coastlines') {
         editorSelectionLine.material.color.setHex(0x00f0ff);
+      } else if (selection.layer === 'beaches') {
+        editorSelectionLine.material.color.setHex(0xffd27a);
+      } else if (selection.layer === 'sea') {
+        editorSelectionLine.material.color.setHex(0x3aa6ff);
+      } else if (selection.layer === 'transit') {
+        const type = String(entry.type || '').toUpperCase();
+        const style = TRANSIT_STYLES[type] || TRANSIT_STYLES.METRO;
+        editorSelectionLine.material.color.setHex(style.color);
       } else {
-        editorSelectionLine.material.color.setHex(LEGEND_LINE_COLORS[entry.typeCode] ?? 0xffff66);
+        const code = normalizeTypeCode(entry.typeCode);
+        editorSelectionLine.material.color.setHex(LEGEND_LINE_COLORS[code] ?? 0xffff66);
       }
       editorSelectionLine.visible = true;
       editorSelectionGlowLine.visible = true;
 
       const sphereGeo = new THREE.SphereGeometry(4, 10, 10);
-      entry.polygon.forEach((pt, idx) => {
+      const vertexPoints = entry.polyline ? entry.polyline : entry.polygon;
+      if (!vertexPoints) return;
+      vertexPoints.forEach((pt, idx) => {
         const isActive = idx === selection.vertexIndex;
         const isHovered = editorState.hover &&
           editorState.hover.layer === selection.layer &&
           editorState.hover.index === selection.index &&
           editorState.hover.vertexIndex === idx;
-        const baseColor = LEGEND_LINE_COLORS[entry.typeCode] ?? 0xffffff;
+        const baseColor = selection.layer === 'transit'
+          ? (TRANSIT_STYLES[String(entry.type || '').toUpperCase()] || TRANSIT_STYLES.METRO).color
+          : (selection.layer === 'beaches'
+            ? 0xffd27a
+            : (selection.layer === 'sea'
+              ? 0x3aa6ff
+              : (LEGEND_LINE_COLORS[normalizeTypeCode(entry.typeCode)] ?? 0xffffff)));
         const mat = new THREE.MeshBasicMaterial({
           color: isActive ? 0xffffff : baseColor,
           transparent: true,
@@ -5174,15 +5367,16 @@ const TRANSIT_STYLES = {
 
     function findNearestVertex(point, threshold) {
       if (!blueprintData) return null;
-      const layers = ['buildings', 'zones', 'roads', 'coastlines'];
+      const layers = ['buildings', 'zones', 'roads', 'coastlines', 'beaches', 'sea', 'transit'];
       let best = null;
       const thresh2 = threshold * threshold;
 
       layers.forEach(layer => {
         const list = blueprintData[layer] || [];
         list.forEach((entry, idx) => {
-          if (!entry.polygon) return;
-          entry.polygon.forEach((pt, vIdx) => {
+          const points = entry.polyline ? entry.polyline : entry.polygon;
+          if (!points) return;
+          points.forEach((pt, vIdx) => {
             const dx = pt[0] - point.x;
             const dz = pt[1] - point.z;
             const d2 = dx * dx + dz * dz;
@@ -5227,17 +5421,18 @@ const TRANSIT_STYLES = {
 
     function findNearestEdge(point, threshold) {
       if (!blueprintData) return null;
-      const layers = ['buildings', 'zones', 'roads', 'coastlines'];
+      const layers = ['buildings', 'zones', 'roads', 'coastlines', 'beaches', 'sea', 'transit'];
       const thresh2 = threshold * threshold;
       let best = null;
       layers.forEach(layer => {
         const list = blueprintData[layer] || [];
         list.forEach((entry, idx) => {
-          if (!entry.polygon || entry.polygon.length < 2) return;
-          const poly = entry.polygon;
-          for (let i = 0; i < poly.length; i++) {
-            const a = poly[i];
-            const b = poly[(i + 1) % poly.length];
+          const points = entry.polyline ? entry.polyline : entry.polygon;
+          if (!points || points.length < 2) return;
+          const maxIndex = entry.polyline ? points.length - 1 : points.length;
+          for (let i = 0; i < maxIndex; i++) {
+            const a = points[i];
+            const b = points[(i + 1) % points.length];
             const res = distancePointToSegment(point, a, b);
             if (res.dist2 < thresh2 && (!best || res.dist2 < best.dist2)) {
               best = { layer, index: idx, segmentIndex: i + 1, dist2: res.dist2, point: res.closest };
@@ -5282,7 +5477,7 @@ const TRANSIT_STYLES = {
 
     function findPolygonHit(point) {
       if (!blueprintData) return null;
-      const layers = ['buildings', 'zones', 'roads', 'coastlines'];
+      const layers = ['buildings', 'zones', 'roads', 'coastlines', 'beaches', 'sea'];
       for (const layer of layers) {
         const list = blueprintData[layer] || [];
         for (let idx = 0; idx < list.length; idx++) {
@@ -5300,6 +5495,10 @@ const TRANSIT_STYLES = {
     function selectAtPoint(point) {
       const vertexHit = findNearestVertex(point, 12);
       if (vertexHit) return vertexHit;
+      const edgeHit = findNearestEdge(point, 10);
+      if (edgeHit && edgeHit.layer === 'transit') {
+        return { layer: edgeHit.layer, index: edgeHit.index, vertexIndex: null };
+      }
       return findPolygonHit(point);
     }
 
@@ -5336,15 +5535,36 @@ const TRANSIT_STYLES = {
         blueprintData.roads.push({ id, polygon, curves: [] });
       } else if (editorState.targetLayer === 'coastlines') {
         blueprintData.coastlines.push({ id, polygon, curves: [] });
+      } else if (editorState.targetLayer === 'beaches') {
+        blueprintData.beaches.push({ id, polygon, curves: [] });
+      } else if (editorState.targetLayer === 'sea') {
+        blueprintData.sea.push({ id, polygon, curves: [] });
       }
 
       editorState.draft = [];
       editorState.selected = { layer: editorState.targetLayer, index: (blueprintData[editorState.targetLayer].length - 1), vertexIndex: null };
       buildBlueprintFromData(blueprintData);
+      rebuildBlueprintCity();
       updateDraftLine();
       updateDraftMarkers();
       updateSelectionMarkers();
       updateEditorStatus('Polygon added.');
+    }
+
+    function addPolylineFromDraft() {
+      if (!blueprintData) blueprintData = normalizeBlueprintData({});
+      if (editorState.draft.length < 2) return;
+      const id = `transit-${Date.now()}`;
+      const polyline = editorState.draft.map(p => [p[0], p[1]]);
+      blueprintData.transit.push({ id, type: editorState.transitType, polyline, curves: [] });
+      editorState.draft = [];
+      editorState.selected = { layer: 'transit', index: (blueprintData.transit.length - 1), vertexIndex: null };
+      buildBlueprintFromData(blueprintData);
+      rebuildBlueprintCity();
+      updateDraftLine();
+      updateDraftMarkers();
+      updateSelectionMarkers();
+      updateEditorStatus('Transit line added.');
     }
 
     function deleteSelection() {
@@ -5353,14 +5573,16 @@ const TRANSIT_STYLES = {
       const list = blueprintData[layer];
       if (!list || !list[index]) return;
       const entry = list[index];
-      if (vertexIndex !== null && entry.polygon) {
-        entry.polygon.splice(vertexIndex, 1);
+      const points = entry.polyline ? entry.polyline : entry.polygon;
+      if (vertexIndex !== null && points) {
+        points.splice(vertexIndex, 1);
         if (Array.isArray(entry.curves)) {
           entry.curves = entry.curves
             .filter(c => c !== vertexIndex)
             .map(c => (c > vertexIndex ? c - 1 : c));
         }
-        if (entry.polygon.length < 3) {
+        const minLen = entry.polyline ? 2 : 3;
+        if (points.length < minLen) {
           list.splice(index, 1);
           editorState.selected = null;
         } else {
@@ -5371,6 +5593,7 @@ const TRANSIT_STYLES = {
         editorState.selected = null;
       }
       buildBlueprintFromData(blueprintData);
+      rebuildBlueprintCity();
       updateSelectionMarkers();
       updateEditorStatus('Selection deleted.');
     }
@@ -5380,6 +5603,7 @@ const TRANSIT_STYLES = {
       const id = `poi-${Date.now()}`;
       blueprintData.pois.push({ id, type: editorState.poiType, position: [point.x, point.z] });
       buildBlueprintFromData(blueprintData);
+      rebuildBlueprintCity();
       updateEditorStatus('POI added.');
     }
 
@@ -5389,6 +5613,7 @@ const TRANSIT_STYLES = {
       const layerSelect = document.getElementById('editorLayer');
       const typeSelect = document.getElementById('editorTypeCode');
       const poiSelect = document.getElementById('editorPoiType');
+      const transitSelect = document.getElementById('editorTransitType');
       const snapGridToggle = document.getElementById('editorSnapGrid');
       const snapPixelToggle = document.getElementById('editorSnapPixels');
       const pixelStepInput = document.getElementById('editorPixelStep');
@@ -5414,7 +5639,10 @@ const TRANSIT_STYLES = {
       if (toolSelect) {
         toolSelect.addEventListener('change', (e) => {
           editorState.tool = e.target.value;
-          if (editorState.tool !== 'polygon') {
+          if (editorState.tool === 'polyline') {
+            editorState.targetLayer = 'transit';
+          }
+          if (editorState.tool !== 'polygon' && editorState.tool !== 'polyline') {
             editorState.draft = [];
             updateDraftLine();
           }
@@ -5426,6 +5654,9 @@ const TRANSIT_STYLES = {
       if (layerSelect) {
         layerSelect.addEventListener('change', (e) => {
           editorState.targetLayer = e.target.value;
+          if (editorState.targetLayer === 'transit') {
+            editorState.tool = 'polyline';
+          }
           updateEditorUIState();
           updateDraftLine();
         });
@@ -5442,6 +5673,14 @@ const TRANSIT_STYLES = {
       if (poiSelect) {
         poiSelect.addEventListener('change', (e) => {
           editorState.poiType = e.target.value;
+        });
+      }
+
+      if (transitSelect) {
+        transitSelect.addEventListener('change', (e) => {
+          editorState.transitType = e.target.value;
+          updateDraftLine();
+          updateSelectionMarkers();
         });
       }
 
@@ -5473,6 +5712,7 @@ const TRANSIT_STYLES = {
           editorState.hover = null;
           editorState.hoverDraftIndex = null;
           buildBlueprintFromData(blueprintData);
+          rebuildBlueprintCity();
           updateDraftLine();
           updateDraftMarkers();
           updateSelectionMarkers();
@@ -5502,7 +5742,9 @@ const TRANSIT_STYLES = {
         if (!mapPoint) return;
         const snapped = snapMapPoint(mapPoint);
 
-        if (editorState.tool === 'polygon') {
+        if (editorState.tool === 'polygon' || editorState.tool === 'polyline') {
+          const isPolylineTool = editorState.tool === 'polyline';
+          if (isPolylineTool) editorState.targetLayer = 'transit';
           const draftHit = findNearestDraftVertex(snapped, 10);
           if (draftHit) {
             editorState.dragging = { mode: 'draft', index: draftHit.index };
@@ -5525,13 +5767,17 @@ const TRANSIT_STYLES = {
           if (edgeHit) {
             const list = blueprintData?.[edgeHit.layer];
             const entry = list?.[edgeHit.index];
-            if (entry?.polygon) {
-              if (!Array.isArray(entry.curves)) entry.curves = [];
-              entry.curves = entry.curves.map(c => (c >= edgeHit.segmentIndex ? c + 1 : c));
-              entry.polygon.splice(edgeHit.segmentIndex, 0, [edgeHit.point.x, edgeHit.point.z]);
-              entry.curves.push(edgeHit.segmentIndex);
+            const points = entry?.polyline ? entry.polyline : entry?.polygon;
+            if (points) {
+              if (entry.polygon) {
+                if (!Array.isArray(entry.curves)) entry.curves = [];
+                entry.curves = entry.curves.map(c => (c >= edgeHit.segmentIndex ? c + 1 : c));
+                entry.curves.push(edgeHit.segmentIndex);
+              }
+              points.splice(edgeHit.segmentIndex, 0, [edgeHit.point.x, edgeHit.point.z]);
               editorState.selected = { layer: edgeHit.layer, index: edgeHit.index, vertexIndex: edgeHit.segmentIndex };
               buildBlueprintFromData(blueprintData);
+              rebuildBlueprintCity();
               updateSelectionMarkers();
               editorState.dragging = { mode: 'vertex', start: { x: snapped.x, z: snapped.z }, original: null };
             }
@@ -5563,12 +5809,13 @@ const TRANSIT_STYLES = {
         } else if (selection) {
           const list = blueprintData?.[selection.layer];
           const entry = list?.[selection.index];
-          if (entry?.polygon) {
+          if (entry?.polygon || entry?.polyline) {
             editorState.dragging = {
               mode: 'polygon',
               start: { x: snapped.x, z: snapped.z },
-              original: entry.polygon.map(p => [p[0], p[1]]),
-              curves: Array.isArray(entry.curves) ? [...entry.curves] : []
+              original: (entry.polyline || entry.polygon).map(p => [p[0], p[1]]),
+              curves: Array.isArray(entry.curves) ? [...entry.curves] : [],
+              isPolyline: !!entry.polyline
             };
           }
         } else {
@@ -5604,16 +5851,26 @@ const TRANSIT_STYLES = {
         const entry = list[index];
 
         if (editorState.dragging.mode === 'vertex' && vertexIndex !== null) {
-          entry.polygon[vertexIndex] = [snapped.x, snapped.z];
+          if (entry.polyline) {
+            entry.polyline[vertexIndex] = [snapped.x, snapped.z];
+          } else if (entry.polygon) {
+            entry.polygon[vertexIndex] = [snapped.x, snapped.z];
+          }
         } else if (editorState.dragging.mode === 'polygon' && editorState.dragging.original) {
           const dx = snapped.x - editorState.dragging.start.x;
           const dz = snapped.z - editorState.dragging.start.z;
-          entry.polygon = editorState.dragging.original.map(p => [p[0] + dx, p[1] + dz]);
-          if (Array.isArray(entry.curves)) {
-            entry.curves = editorState.dragging.curves || entry.curves;
+          const moved = editorState.dragging.original.map(p => [p[0] + dx, p[1] + dz]);
+          if (editorState.dragging.isPolyline) {
+            entry.polyline = moved;
+          } else {
+            entry.polygon = moved;
+            if (Array.isArray(entry.curves)) {
+              entry.curves = editorState.dragging.curves || entry.curves;
+            }
           }
         }
         buildBlueprintFromData(blueprintData);
+        rebuildBlueprintCity();
         updateSelectionMarkers();
       });
 
@@ -5625,6 +5882,7 @@ const TRANSIT_STYLES = {
         if (!editorActive()) return;
         if (e.key === 'Enter') {
           if (editorState.tool === 'polygon') addPolygonFromDraft();
+          if (editorState.tool === 'polyline') addPolylineFromDraft();
         } else if (e.key === 'Escape') {
           editorState.draft = [];
           updateDraftLine();
