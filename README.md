@@ -28,6 +28,7 @@ All polygon points are `[x, z]` in world units (centered map).
   "coastlines": [{ "id": "mainland", "polygon": [[0,0],[10,0],[10,10]] }],
   "beaches": [{ "id": "beach-1", "polygon": [[0,0],[10,0],[10,10]] }],
   "sea": [{ "id": "sea-1", "polygon": [[-700,-500],[700,-500],[700,500],[-700,500]] }],
+  "transit": [{ "id": "metro-1", "type": "METRO", "polyline": [[0,0],[50,0]], "stations": [[0,0],[50,0]] }],
   "roads": [{ "id": "road-1", "polygon": [[0,0],[10,0],[10,2]] }],
   "zones": [{ "id": "zone-1", "typeCode": "Q", "polygon": [[0,0],[10,0],[10,10]] }],
   "buildings": [{ "id": "bldg-1", "typeCode": "B", "polygon": [[0,0],[4,0],[4,4]] }],
@@ -38,6 +39,7 @@ All polygon points are `[x, z]` in world units (centered map).
 Optional fields:
 - `curves`: array of vertex indices for quadratic curve control points.
 - `roads[].polyline`: array of points for centerline roads (optional `width`).
+- `transit`: `type` is `METRO`, `TRAIN`, or `HYPERLOOP`.
 
 Supported `typeCode` values:
 `Q, B, ZC, J, H, R, PO, PK, MA, H★, S, T, D, Ci, ff, P, ⚡, 💧`
@@ -49,4 +51,3 @@ Supported `typeCode` values:
 - Add POI tool: places a point marker.
 - Snap options: grid or pixel snapping (off by default).
 - Use "Use Blueprint for City" to render the blueprint-driven city.
-

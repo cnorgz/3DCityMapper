@@ -511,6 +511,7 @@
         <option value="PORT">PORT</option>
         <option value="WIND_TURBINE">WIND</option>
         <option value="ECOLE">ECOLE</option>
+        <option value="SKYSCRAPER">SKY</option>
       </select>
       <span></span>
     </div>
@@ -880,7 +881,14 @@ const POI_COLORS = {
   HYPERLOOP_NODE: 0x00ffd5,
   PORT: 0x55a6ff,
   WIND_TURBINE: 0xaad1ff,
-  ECOLE: 0xffc857
+  ECOLE: 0xffc857,
+  SKYSCRAPER: 0xffcc33
+};
+
+const TRANSIT_STYLES = {
+  METRO: { color: 0x2f7bff, radius: 2.2 },
+  TRAIN: { color: 0xc0c0c0, radius: 2.6 },
+  HYPERLOOP: { color: 0x00ffd5, radius: 1.8 }
 };
 
 // Cameras
@@ -1057,12 +1065,13 @@ const POI_COLORS = {
         coastlines: Array.isArray(data?.coastlines) ? data.coastlines : [],
         beaches: Array.isArray(data?.beaches) ? data.beaches : [],
         sea: Array.isArray(data?.sea) ? data.sea : [],
+        transit: Array.isArray(data?.transit) ? data.transit : [],
         roads: Array.isArray(data?.roads) ? data.roads : [],
         zones: Array.isArray(data?.zones) ? data.zones : [],
         buildings: Array.isArray(data?.buildings) ? data.buildings : [],
         pois: Array.isArray(data?.pois) ? data.pois : []
       };
-      ['coastlines', 'beaches', 'sea', 'roads', 'zones', 'buildings'].forEach((key) => {
+      ['coastlines', 'beaches', 'sea', 'transit', 'roads', 'zones', 'buildings'].forEach((key) => {
         normalized[key].forEach((entry) => {
           if (!Array.isArray(entry.curves)) entry.curves = [];
         });
@@ -1093,6 +1102,9 @@ const POI_COLORS = {
           errors.push(`${key} must be an array when provided.`);
         }
       });
+      if (data.transit !== undefined && !Array.isArray(data.transit)) {
+        errors.push('transit must be an array when provided.');
+      }
 
       const isFinitePoint = (pt) => Array.isArray(pt) && pt.length >= 2 &&
         Number.isFinite(pt[0]) && Number.isFinite(pt[1]);
@@ -1177,6 +1189,25 @@ const POI_COLORS = {
           warnings.push(`sea[${idx}] polygon winding is clockwise.`);
         }
         validateCurves(entry, idx, 'sea');
+      });
+
+      (data.transit || []).forEach((entry, idx) => {
+        if (!entry?.type || typeof entry.type !== 'string') {
+          errors.push(`transit[${idx}] type is required.`);
+        }
+        const line = entry?.polyline;
+        if (!Array.isArray(line) || line.length < 2 || !line.every(isFinitePoint)) {
+          errors.push(`transit[${idx}] polyline must have >= 2 valid points.`);
+        }
+        if (entry?.stations) {
+          if (!Array.isArray(entry.stations) || !entry.stations.every(isFinitePoint)) {
+            errors.push(`transit[${idx}] stations must be an array of points.`);
+          }
+        }
+        const type = String(entry?.type || '').toUpperCase();
+        if (type && !['METRO', 'TRAIN', 'HYPERLOOP'].includes(type)) {
+          warnings.push(`transit[${idx}] type "${entry.type}" is unknown.`);
+        }
       });
 
       (data.roads || []).forEach((entry, idx) => {
@@ -1474,6 +1505,27 @@ const POI_COLORS = {
         }
       });
 
+      (data.transit || []).forEach(entry => {
+        if (!entry.polyline || entry.polyline.length < 2) return;
+        const type = String(entry.type || '').toUpperCase();
+        const style = TRANSIT_STYLES[type] || TRANSIT_STYLES.METRO;
+        const tube = createTransitTube(entry.polyline, style.radius, style.color);
+        if (tube) BLUEPRINT_LAYERS.roads.add(tube);
+
+        if (type === 'HYPERLOOP') {
+          const chain = createHyperloopChain(entry.polyline, style.color);
+          BLUEPRINT_LAYERS.props.add(chain);
+        }
+
+        if (type === 'METRO' && Array.isArray(entry.stations)) {
+          entry.stations.forEach((pos) => {
+            const marker = createMetroStationMarker();
+            marker.position.set(pos[0], Y.buildings + 4, pos[1]);
+            BLUEPRINT_LAYERS.props.add(marker);
+          });
+        }
+      });
+
       (data.zones || []).forEach(entry => {
         const info = getLegendInfo(entry.typeCode);
         const points = getRenderPolygonPoints(entry);
@@ -1498,11 +1550,9 @@ const POI_COLORS = {
 
       createBlueprintParkTrees(data);
 
-      const poiGeo = new THREE.SphereGeometry(5, 10, 10);
       (data.pois || []).forEach(entry => {
         if (!entry.position || entry.position.length < 2) return;
-        const color = POI_COLORS[entry.type] ?? 0x00ff88;
-        const marker = new THREE.Mesh(poiGeo, new THREE.MeshStandardMaterial({ color }));
+        const marker = createPoiMarker(entry.type);
         marker.position.set(entry.position[0], Y.buildings + 3, entry.position[1]);
         marker.userData = { type: entry.type };
         BLUEPRINT_LAYERS.props.add(marker);
@@ -1792,6 +1842,147 @@ const POI_COLORS = {
         group.add(road);
       }
       return group;
+    }
+
+    function createTransitTube(points, radius, color) {
+      if (!points || points.length < 2) return null;
+      const curve = new THREE.CatmullRomCurve3(
+        points.map(p => new THREE.Vector3(p[0], Y.roads + 0.6, p[1]))
+      );
+      const segments = Math.max(20, points.length * 6);
+      const geometry = new THREE.TubeGeometry(curve, segments, radius, 8, false);
+      const material = new THREE.MeshStandardMaterial({
+        color,
+        roughness: 0.4,
+        metalness: 0.2
+      });
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.receiveShadow = true;
+      return mesh;
+    }
+
+    function createHyperloopChain(points, color) {
+      const group = new THREE.Group();
+      if (!points || points.length < 2) return group;
+      const ringGeo = new THREE.TorusGeometry(3.2, 0.7, 6, 12);
+      const ringMat = new THREE.MeshStandardMaterial({ color, roughness: 0.3, metalness: 0.4 });
+      const spacing = 28;
+      for (let i = 0; i < points.length - 1; i++) {
+        const [x1, z1] = points[i];
+        const [x2, z2] = points[i + 1];
+        const dx = x2 - x1;
+        const dz = z2 - z1;
+        const length = Math.hypot(dx, dz);
+        if (length < 0.001) continue;
+        const steps = Math.max(1, Math.floor(length / spacing));
+        for (let s = 0; s <= steps; s++) {
+          const t = s / steps;
+          const x = x1 + dx * t;
+          const z = z1 + dz * t;
+          const ring = new THREE.Mesh(ringGeo, ringMat);
+          ring.position.set(x, Y.roads + 3, z);
+          ring.rotation.y = Math.atan2(dz, dx);
+          group.add(ring);
+        }
+      }
+      return group;
+    }
+
+    function createMetroStationMarker() {
+      const size = 64;
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, size, size);
+      ctx.beginPath();
+      ctx.arc(size / 2, size / 2, size * 0.42, 0, Math.PI * 2);
+      ctx.fillStyle = '#2f7bff';
+      ctx.fill();
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = '#ffffff';
+      ctx.stroke();
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 28px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('M', size / 2, size / 2 + 2);
+
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      const material = new THREE.SpriteMaterial({ map: texture, transparent: true });
+      const sprite = new THREE.Sprite(material);
+      sprite.scale.set(18, 18, 1);
+      return sprite;
+    }
+
+    function createPoiMarker(type) {
+      switch (type) {
+        case 'METRO_STATION': {
+          return createMetroStationMarker();
+        }
+        case 'TRAIN_STATION': {
+          const group = new THREE.Group();
+          const base = new THREE.Mesh(
+            new THREE.BoxGeometry(12, 6, 10),
+            new THREE.MeshStandardMaterial({ color: 0xaaaaaa })
+          );
+          base.position.y = 3;
+          group.add(base);
+          const roof = new THREE.Mesh(
+            new THREE.BoxGeometry(14, 2, 12),
+            new THREE.MeshStandardMaterial({ color: 0x444444 })
+          );
+          roof.position.y = 7;
+          group.add(roof);
+          return group;
+        }
+        case 'HYPERLOOP_NODE': {
+          const torus = new THREE.Mesh(
+            new THREE.TorusGeometry(6, 1.5, 10, 16),
+            new THREE.MeshStandardMaterial({ color: 0x00ffd5, roughness: 0.3, metalness: 0.5 })
+          );
+          torus.rotation.x = Math.PI / 2;
+          return torus;
+        }
+        case 'PORT': {
+          const dock = new THREE.Mesh(
+            new THREE.BoxGeometry(16, 3, 10),
+            new THREE.MeshStandardMaterial({ color: 0x3a6f9a })
+          );
+          dock.position.y = 1.5;
+          return dock;
+        }
+        case 'WIND_TURBINE': {
+          const turbine = createWindmill();
+          turbine.scale.setScalar(0.25);
+          return turbine;
+        }
+        case 'ECOLE': {
+          const building = new THREE.Mesh(
+            new THREE.BoxGeometry(14, 8, 10),
+            new THREE.MeshStandardMaterial({ color: 0xc87878 })
+          );
+          building.position.y = 4;
+          return building;
+        }
+        case 'SKYSCRAPER': {
+          const tower = new THREE.Mesh(
+            new THREE.CylinderGeometry(6, 8, 60, 10),
+            new THREE.MeshStandardMaterial({ color: 0x444a58, roughness: 0.4, metalness: 0.3 })
+          );
+          tower.position.y = 30;
+          return tower;
+        }
+        default: {
+          const sphere = new THREE.Mesh(
+            new THREE.SphereGeometry(5, 10, 10),
+            new THREE.MeshStandardMaterial({ color: POI_COLORS[type] ?? 0x00ff88 })
+          );
+          sphere.position.y = 5;
+          return sphere;
+        }
+      }
     }
     
     // Create building with properly attached windows

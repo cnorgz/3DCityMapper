@@ -4,6 +4,9 @@
     "units": "world",
     "origin": "center"
   },
+  "beaches": [],
+  "sea": [],
+  "transit": [],
   "coastlines": [
     {
       "id": "demo-mainland",
