@@ -1643,7 +1643,7 @@ const TRANSIT_STYLES = {
       ctx.lineWidth = 4;
       ctx.stroke();
       ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 44px sans-serif';
+      ctx.font = 'bold 64px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(text, size / 2, size / 2 + 2);
@@ -1652,7 +1652,7 @@ const TRANSIT_STYLES = {
       texture.colorSpace = THREE.SRGBColorSpace;
       const material = new THREE.SpriteMaterial({ map: texture, transparent: true, opacity: 0.9 });
       const sprite = new THREE.Sprite(material);
-      sprite.scale.set(18, 18, 1);
+      sprite.scale.set(28, 28, 1);
       return sprite;
     }
 
@@ -1668,7 +1668,6 @@ const TRANSIT_STYLES = {
         blueprintLabelGroup.add(sprite);
       };
 
-      (data.zones || []).forEach(entry => addLabel(entry, 0.09));
       (data.buildings || []).forEach(entry => addLabel(entry, 0.095));
     }
 
