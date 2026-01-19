@@ -5229,6 +5229,14 @@ const TRANSIT_STYLES = {
       return editorState.enabled && viewMode === 'fidelity';
     }
 
+    function getEditorMode() {
+      if (!editorActive()) return 'disabled';
+      if (editorState.tool === 'polygon') return 'draw-polygon';
+      if (editorState.tool === 'polyline') return 'draw-polyline';
+      if (editorState.tool === 'poi') return 'poi';
+      return editorState.selected ? 'edit' : 'select';
+    }
+
     function ensureEditorGroups() {
       if (!mapOverlayGroup || editorGroup) return;
       editorGroup = new THREE.Group();
@@ -5518,6 +5526,31 @@ const TRANSIT_STYLES = {
       return best;
     }
 
+    function findNearestVertexInEntry(entry, point, threshold) {
+      if (!entry) return null;
+      const points = entry.polyline ? entry.polyline : entry.polygon;
+      if (!points || points.length === 0) return null;
+      const thresh2 = threshold * threshold;
+      let best = null;
+      points.forEach((pt, vIdx) => {
+        const dx = pt[0] - point.x;
+        const dz = pt[1] - point.z;
+        const d2 = dx * dx + dz * dz;
+        if (d2 < thresh2 && (!best || d2 < best.dist2)) {
+          best = { vertexIndex: vIdx, dist2: d2 };
+        }
+      });
+      return best;
+    }
+
+    function getSelectedEntry() {
+      if (!editorState.selected || !blueprintData) return null;
+      const { layer, index } = editorState.selected;
+      const list = blueprintData[layer];
+      if (!list || !list[index]) return null;
+      return { entry: list[index], layer, index };
+    }
+
     function findNearestDraftVertex(point, threshold) {
       if (!editorState.draft || editorState.draft.length === 0) return null;
       const thresh2 = threshold * threshold;
@@ -5569,6 +5602,24 @@ const TRANSIT_STYLES = {
           }
         });
       });
+      return best;
+    }
+
+    function findNearestEdgeInEntry(entry, point, threshold) {
+      if (!entry) return null;
+      const points = entry.polyline ? entry.polyline : entry.polygon;
+      if (!points || points.length < 2) return null;
+      const thresh2 = threshold * threshold;
+      const maxIndex = entry.polyline ? points.length - 1 : points.length;
+      let best = null;
+      for (let i = 0; i < maxIndex; i++) {
+        const a = points[i];
+        const b = points[(i + 1) % points.length];
+        const res = distancePointToSegment(point, a, b);
+        if (res.dist2 < thresh2 && (!best || res.dist2 < best.dist2)) {
+          best = { segmentIndex: i + 1, dist2: res.dist2, point: res.closest };
+        }
+      }
       return best;
     }
 
@@ -5635,16 +5686,32 @@ const TRANSIT_STYLES = {
       if (!editorActive()) return;
       editorState.hover = null;
       editorState.hoverDraftIndex = null;
+      const mode = getEditorMode();
       const draftHit = findNearestDraftVertex(point, 10);
       if (draftHit) {
         editorState.hoverDraftIndex = draftHit.index;
         updateDraftMarkers();
         return;
       }
-      const vertexHit = findNearestVertex(point, 10);
-      if (vertexHit) {
-        editorState.hover = vertexHit;
-        updateSelectionMarkers();
+      if (mode === 'edit') {
+        const selected = getSelectedEntry();
+        if (selected) {
+          const hit = findNearestVertexInEntry(selected.entry, point, 10);
+          if (hit) {
+            editorState.hover = {
+              layer: selected.layer,
+              index: selected.index,
+              vertexIndex: hit.vertexIndex
+            };
+            updateSelectionMarkers();
+          }
+        }
+      } else if (mode === 'select') {
+        const vertexHit = findNearestVertex(point, 10);
+        if (vertexHit) {
+          editorState.hover = vertexHit;
+          updateSelectionMarkers();
+        }
       }
       updateDraftMarkers();
     }
@@ -5771,6 +5838,10 @@ const TRANSIT_STYLES = {
           if (editorState.tool === 'polyline') {
             editorState.targetLayer = 'transit';
           }
+          if (editorState.tool === 'polygon' || editorState.tool === 'polyline') {
+            editorState.selected = null;
+            updateSelectionMarkers();
+          }
           if (editorState.tool !== 'polygon' && editorState.tool !== 'polyline') {
             editorState.draft = [];
             updateDraftLine();
@@ -5870,46 +5941,15 @@ const TRANSIT_STYLES = {
         const mapPoint = getPointerMapPoint(e);
         if (!mapPoint) return;
         const snapped = snapMapPoint(mapPoint);
+        const mode = getEditorMode();
 
-        if (editorState.tool === 'polygon' || editorState.tool === 'polyline') {
+        if (mode === 'draw-polygon' || mode === 'draw-polyline') {
+          // Draft mode: only draft vertices are interactive.
           const isPolylineTool = editorState.tool === 'polyline';
           if (isPolylineTool) editorState.targetLayer = 'transit';
           const draftHit = findNearestDraftVertex(snapped, 10);
           if (draftHit) {
             editorState.dragging = { mode: 'draft', index: draftHit.index };
-            return;
-          }
-
-          const vertexHit = findNearestVertex(snapped, 10);
-          if (vertexHit) {
-            editorState.selected = vertexHit;
-            updateSelectionMarkers();
-            editorState.dragging = {
-              mode: 'vertex',
-              start: { x: snapped.x, z: snapped.z },
-              original: null
-            };
-            return;
-          }
-
-          const edgeHit = findNearestEdge(snapped, 12);
-          if (edgeHit) {
-            const list = blueprintData?.[edgeHit.layer];
-            const entry = list?.[edgeHit.index];
-            const points = entry?.polyline ? entry.polyline : entry?.polygon;
-            if (points) {
-              if (entry.polygon) {
-                if (!Array.isArray(entry.curves)) entry.curves = [];
-                entry.curves = entry.curves.map(c => (c >= edgeHit.segmentIndex ? c + 1 : c));
-                entry.curves.push(edgeHit.segmentIndex);
-              }
-              points.splice(edgeHit.segmentIndex, 0, [edgeHit.point.x, edgeHit.point.z]);
-              editorState.selected = { layer: edgeHit.layer, index: edgeHit.index, vertexIndex: edgeHit.segmentIndex };
-              buildBlueprintFromData(blueprintData);
-              rebuildBlueprintCity();
-              updateSelectionMarkers();
-              editorState.dragging = { mode: 'vertex', start: { x: snapped.x, z: snapped.z }, original: null };
-            }
             return;
           }
 
@@ -5920,9 +5960,65 @@ const TRANSIT_STYLES = {
           return;
         }
 
-        if (editorState.tool === 'poi') {
+        if (mode === 'poi') {
           addPoiAt(snapped);
           return;
+        }
+
+        if (mode === 'edit') {
+          // Editing: only active shape handles/body are interactive.
+          const selected = getSelectedEntry();
+          if (selected) {
+            const vertexHit = findNearestVertexInEntry(selected.entry, snapped, 10);
+            if (vertexHit) {
+              editorState.selected = {
+                layer: selected.layer,
+                index: selected.index,
+                vertexIndex: vertexHit.vertexIndex
+              };
+              updateSelectionMarkers();
+              editorState.dragging = {
+                mode: 'vertex',
+                start: { x: snapped.x, z: snapped.z },
+                original: null
+              };
+              return;
+            }
+
+            const edgeHit = findNearestEdgeInEntry(selected.entry, snapped, 12);
+            if (edgeHit) {
+              const points = selected.entry.polyline ? selected.entry.polyline : selected.entry.polygon;
+              if (points) {
+                if (selected.entry.polygon) {
+                  if (!Array.isArray(selected.entry.curves)) selected.entry.curves = [];
+                  selected.entry.curves = selected.entry.curves.map(c => (c >= edgeHit.segmentIndex ? c + 1 : c));
+                  selected.entry.curves.push(edgeHit.segmentIndex);
+                }
+                points.splice(edgeHit.segmentIndex, 0, [edgeHit.point.x, edgeHit.point.z]);
+                editorState.selected = { layer: selected.layer, index: selected.index, vertexIndex: edgeHit.segmentIndex };
+                buildBlueprintFromData(blueprintData);
+                rebuildBlueprintCity();
+                updateSelectionMarkers();
+                editorState.dragging = { mode: 'vertex', start: { x: snapped.x, z: snapped.z }, original: null };
+              }
+              return;
+            }
+
+            if (selected.entry.polygon && pointInPolygon(snapped.x, snapped.z, selected.entry.polygon)) {
+              editorState.dragging = {
+                mode: 'polygon',
+                start: { x: snapped.x, z: snapped.z },
+                original: selected.entry.polygon.map(p => [p[0], p[1]]),
+                curves: Array.isArray(selected.entry.curves) ? [...selected.entry.curves] : [],
+                isPolyline: false
+              };
+              return;
+            }
+
+            editorState.selected = null;
+            updateSelectionMarkers();
+            return;
+          }
         }
 
         const selection = selectAtPoint(snapped);
