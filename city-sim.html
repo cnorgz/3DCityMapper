@@ -487,6 +487,15 @@
     </label>
     <hr style="border: none; border-top: 1px solid rgba(100, 200, 255, 0.2); margin: 10px 0;" />
     <h4 style="color: #64c8ff; font-size: 12px; margin: 8px 0 4px 0;">Blueprint</h4>
+    <div class="control-row">
+      <label for="blueprintOpacity">Blueprint Opacity</label>
+      <input type="range" id="blueprintOpacity" min="0.1" max="1" step="0.01" value="1" data-step="0.01" data-step-fine="0.01" />
+      <input type="number" id="blueprintOpacityValue" min="0.1" max="1" step="0.01" value="1" />
+    </div>
+    <label class="toggle-row">
+      <input type="checkbox" id="blueprintLabels" />
+      <span>Polygon Labels</span>
+    </label>
     <label class="toggle-row">
       <input type="checkbox" id="blueprintUseCity" />
       <span>Use Blueprint for City</span>
@@ -857,7 +866,7 @@ const debugSettings = {
   showBlueprintOutlines: false
 };
 
-  const editorState = {
+const editorState = {
     enabled: false,
     tool: 'select',
     targetLayer: 'zones',
@@ -877,6 +886,12 @@ const debugSettings = {
 
 let blueprintCityEnabled = false;
 let blueprintZoneMeshes = [];
+let blueprintLabelGroup = null;
+
+const blueprintPreviewSettings = {
+  opacity: 1,
+  showLabels: false
+};
 
 const LEGEND_LINE_COLORS = {
   Q: 0xff3b3b,
@@ -1087,6 +1102,9 @@ const TRANSIT_STYLES = {
       if (overlayBounds) overlayBounds.visible = allowed && debugSettings.showOverlayBounds;
       if (blueprintOutlineGroup) blueprintOutlineGroup.visible = allowed && debugSettings.showBlueprintOutlines;
       if (blueprintMeshGroup) blueprintMeshGroup.visible = allowed && debugSettings.showBlueprintOutlines;
+      if (blueprintLabelGroup) {
+        blueprintLabelGroup.visible = allowed && debugSettings.showBlueprintOutlines && blueprintPreviewSettings.showLabels;
+      }
     }
 
 
@@ -1116,13 +1134,32 @@ const TRANSIT_STYLES = {
       gridHelper.position.y = Y.overlay + 0.02;
       mapOverlayGroup.add(gridHelper);
 
-      const boundsGeometry = new THREE.PlaneGeometry(MAP_OVERLAY_WORLD_W, MAP_OVERLAY_WORLD_H);
-      boundsGeometry.rotateX(-Math.PI / 2);
-      const boundsMaterial = new THREE.LineBasicMaterial({ color: 0xff3366, transparent: false });
+      const halfW = MAP_OVERLAY_WORLD_W / 2;
+      const halfH = MAP_OVERLAY_WORLD_H / 2;
+      const boundsPositions = [
+        -halfW, 0, -halfH,
+        halfW, 0, -halfH,
+        halfW, 0, -halfH,
+        halfW, 0, halfH,
+        halfW, 0, halfH,
+        -halfW, 0, halfH,
+        -halfW, 0, halfH,
+        -halfW, 0, -halfH
+      ];
+      const boundsGeometry = new LineGeometry();
+      boundsGeometry.setPositions(boundsPositions);
+      const boundsMaterial = new LineMaterial({
+        color: 0xff2f5a,
+        linewidth: 3,
+        transparent: true,
+        opacity: 0.95
+      });
       boundsMaterial.depthTest = false;
-      overlayBounds = new THREE.LineSegments(new THREE.EdgesGeometry(boundsGeometry), boundsMaterial);
+      overlayBounds = new Line2(boundsGeometry, boundsMaterial);
       overlayBounds.position.y = Y.overlay + 0.03;
       overlayBounds.renderOrder = 999;
+      overlayBounds.frustumCulled = false;
+      updateLineResolution(overlayBounds);
       mapOverlayGroup.add(overlayBounds);
 
       blueprintOutlineGroup = new THREE.Group();
@@ -1132,6 +1169,10 @@ const TRANSIT_STYLES = {
       blueprintMeshGroup = new THREE.Group();
       blueprintMeshGroup.name = 'BlueprintMeshes';
       mapOverlayGroup.add(blueprintMeshGroup);
+
+      blueprintLabelGroup = new THREE.Group();
+      blueprintLabelGroup.name = 'BlueprintLabels';
+      mapOverlayGroup.add(blueprintLabelGroup);
     }
 
     function normalizeBlueprintData(data) {
@@ -1402,16 +1443,18 @@ const TRANSIT_STYLES = {
       if (!blueprintOutlineGroup || !blueprintMeshGroup) return;
       resetGroup(blueprintOutlineGroup);
       resetGroup(blueprintMeshGroup);
+      if (blueprintLabelGroup) resetGroup(blueprintLabelGroup);
 
-      const baseOutlineMat = new THREE.LineBasicMaterial({ color: 0x00f0ff, transparent: false, linewidth: 2 });
+      const lineOpacity = blueprintPreviewSettings.opacity;
+      const baseOutlineMat = new THREE.LineBasicMaterial({ color: 0x00f0ff, transparent: true, opacity: lineOpacity });
       baseOutlineMat.depthTest = false;
-      const roadOutlineMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: false, linewidth: 2 });
+      const roadOutlineMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: lineOpacity });
       roadOutlineMat.depthTest = false;
 
       const landFillMat = new THREE.MeshBasicMaterial({
         color: COLORS.land,
         transparent: true,
-        opacity: 0.18,
+        opacity: 0.18 * blueprintPreviewSettings.opacity,
         depthWrite: false,
         depthTest: false,
         side: THREE.DoubleSide
@@ -1419,7 +1462,7 @@ const TRANSIT_STYLES = {
       const beachFillMat = new THREE.MeshBasicMaterial({
         color: COLORS.beach,
         transparent: true,
-        opacity: 0.18,
+        opacity: 0.18 * blueprintPreviewSettings.opacity,
         depthWrite: false,
         depthTest: false,
         side: THREE.DoubleSide
@@ -1427,7 +1470,7 @@ const TRANSIT_STYLES = {
       const seaFillMat = new THREE.MeshBasicMaterial({
         color: COLORS.sea,
         transparent: true,
-        opacity: 0.16,
+        opacity: 0.16 * blueprintPreviewSettings.opacity,
         depthWrite: false,
         depthTest: false,
         side: THREE.DoubleSide
@@ -1435,7 +1478,7 @@ const TRANSIT_STYLES = {
       const roadFillMat = new THREE.MeshBasicMaterial({
         color: 0x222222,
         transparent: true,
-        opacity: 0.22,
+        opacity: 0.22 * blueprintPreviewSettings.opacity,
         depthWrite: false,
         depthTest: false,
         side: THREE.DoubleSide
@@ -1540,7 +1583,7 @@ const TRANSIT_STYLES = {
         const zoneMat = new THREE.MeshBasicMaterial({
           color,
           transparent: true,
-          opacity: 0.14,
+          opacity: 0.14 * blueprintPreviewSettings.opacity,
           depthWrite: false,
           depthTest: false,
           side: THREE.DoubleSide
@@ -1558,7 +1601,7 @@ const TRANSIT_STYLES = {
         const zoneMat = new THREE.MeshBasicMaterial({
           color,
           transparent: true,
-          opacity: 0.18,
+          opacity: 0.18 * blueprintPreviewSettings.opacity,
           depthWrite: false,
           depthTest: false,
           side: THREE.DoubleSide
@@ -1578,7 +1621,55 @@ const TRANSIT_STYLES = {
         blueprintMeshGroup.add(marker);
       });
 
+      if (blueprintPreviewSettings.showLabels) {
+        addBlueprintLabels(data);
+      }
+
       updateDebugVisibility();
+    }
+
+    function createLabelSprite(text) {
+      const canvas = document.createElement('canvas');
+      const size = 128;
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, size, size);
+      ctx.fillStyle = 'rgba(12, 16, 30, 0.8)';
+      ctx.beginPath();
+      ctx.arc(size / 2, size / 2, size * 0.38, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#64c8ff';
+      ctx.lineWidth = 4;
+      ctx.stroke();
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 44px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, size / 2, size / 2 + 2);
+
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      const material = new THREE.SpriteMaterial({ map: texture, transparent: true, opacity: 0.9 });
+      const sprite = new THREE.Sprite(material);
+      sprite.scale.set(18, 18, 1);
+      return sprite;
+    }
+
+    function addBlueprintLabels(data) {
+      if (!blueprintLabelGroup) return;
+      const addLabel = (entry, yOffset) => {
+        if (!entry?.polygon || !entry.typeCode) return;
+        const code = normalizeTypeCode(entry.typeCode);
+        // centroidNorm works for any polygon coordinate space.
+        const centroid = centroidNorm(entry.polygon);
+        const sprite = createLabelSprite(code);
+        sprite.position.set(centroid[0], Y.overlay + yOffset, centroid[1]);
+        blueprintLabelGroup.add(sprite);
+      };
+
+      (data.zones || []).forEach(entry => addLabel(entry, 0.09));
+      (data.buildings || []).forEach(entry => addLabel(entry, 0.095));
     }
 
     function clearBlueprintCity() {
@@ -4682,6 +4773,7 @@ const TRANSIT_STYLES = {
       updateLineResolution(editorDraftGlowLine);
       updateLineResolution(editorSelectionLine);
       updateLineResolution(editorSelectionGlowLine);
+      updateLineResolution(overlayBounds);
     });
     
     // ============================================
@@ -5011,8 +5103,35 @@ const TRANSIT_STYLES = {
       const validateBtn = document.getElementById('blueprintValidate');
       const jsonField = document.getElementById('blueprintJson');
       const useCityToggle = document.getElementById('blueprintUseCity');
+      const opacitySlider = document.getElementById('blueprintOpacity');
+      const opacityInput = document.getElementById('blueprintOpacityValue');
+      const labelsToggle = document.getElementById('blueprintLabels');
 
       if (!loadBtn || !saveBtn || !copyBtn || !validateBtn || !jsonField) return;
+
+      const applyPreviewSettings = () => {
+        if (opacitySlider) opacitySlider.value = blueprintPreviewSettings.opacity;
+        if (opacityInput) opacityInput.value = blueprintPreviewSettings.opacity;
+        if (labelsToggle) labelsToggle.checked = blueprintPreviewSettings.showLabels;
+      };
+
+      const updateBlueprintPreview = () => {
+        if (!blueprintData) return;
+        buildBlueprintFromData(blueprintData);
+      };
+
+      const bindOpacityInputs = () => {
+        if (!opacitySlider || !opacityInput) return;
+        const sync = (value) => {
+          const clamped = clampNumber(Number.parseFloat(value), 0.1, 1);
+          blueprintPreviewSettings.opacity = clamped;
+          opacitySlider.value = clamped;
+          opacityInput.value = clamped;
+          updateBlueprintPreview();
+        };
+        opacitySlider.addEventListener('input', (e) => sync(e.target.value));
+        opacityInput.addEventListener('input', (e) => sync(e.target.value));
+      };
 
       const updateJsonField = () => {
         if (!blueprintData) {
@@ -5094,6 +5213,16 @@ const TRANSIT_STYLES = {
           setBlueprintCityEnabled(!!e.target.checked);
         });
       }
+
+      if (labelsToggle) {
+        labelsToggle.addEventListener('change', (e) => {
+          blueprintPreviewSettings.showLabels = !!e.target.checked;
+          updateBlueprintPreview();
+        });
+      }
+
+      bindOpacityInputs();
+      applyPreviewSettings();
     }
 
     function editorActive() {
