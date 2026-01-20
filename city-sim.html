@@ -803,10 +803,13 @@ const BLUEPRINT_LAYERS = {
   props: new THREE.Group(),
   fx: new THREE.Group()
 };
+const blueprintRootGroup = new THREE.Group();
+blueprintRootGroup.name = 'BlueprintRoot';
 Object.values(BLUEPRINT_LAYERS).forEach(g => {
   g.visible = false;
-  scene.add(g);
+  blueprintRootGroup.add(g);
 });
+scene.add(blueprintRootGroup);
 
 // ============================================
 // ZONE REGISTRY
@@ -1194,6 +1197,14 @@ function getRoadLineStyle(type) {
       if (blueprintLabelGroup) {
         blueprintLabelGroup.visible = allowed && blueprintPreviewSettings.showLabels;
       }
+    }
+
+    function syncBlueprintRootToOverlay() {
+      if (!blueprintRootGroup || !mapOverlayGroup) return;
+      blueprintRootGroup.position.copy(mapOverlayGroup.position);
+      blueprintRootGroup.rotation.copy(mapOverlayGroup.rotation);
+      blueprintRootGroup.scale.copy(mapOverlayGroup.scale);
+      blueprintRootGroup.updateMatrixWorld();
     }
 
 
@@ -5031,6 +5042,7 @@ function getRoadLineStyle(type) {
           overlayDimmer.renderOrder = 2;
           mapOverlayGroup.add(overlayDimmer);
           LAYERS.overlay.add(mapOverlayGroup);
+          syncBlueprintRootToOverlay();
           
           // Create coordinate mapper
           mapCoordMapper = new MapCoordMapper({
@@ -5136,6 +5148,7 @@ function getRoadLineStyle(type) {
         mapOverlayGroup.scale.set(settings.scale, 1, settings.scale);
         if (mapOverlayMesh.material) mapOverlayMesh.material.opacity = settings.opacity;
         if (overlayDimmer && overlayDimmer.material) overlayDimmer.material.opacity = settings.dimmer;
+        syncBlueprintRootToOverlay();
         verifyOverlayMapping();
         
         if (!syncInputs) return;
@@ -5944,6 +5957,28 @@ function getRoadLineStyle(type) {
       return best;
     }
 
+    function findNearestLineEndpoint(point, threshold) {
+      if (!blueprintData) return null;
+      const thresh2 = threshold * threshold;
+      let best = null;
+      const checkPolyline = (entry, layer, index) => {
+        if (!entry?.polyline || entry.polyline.length < 2) return;
+        const endpoints = [0, entry.polyline.length - 1];
+        endpoints.forEach((vIdx) => {
+          const pt = entry.polyline[vIdx];
+          const dx = pt[0] - point.x;
+          const dz = pt[1] - point.z;
+          const d2 = dx * dx + dz * dz;
+          if (d2 < thresh2 && (!best || d2 < best.dist2)) {
+            best = { layer, index, vertexIndex: vIdx, dist2: d2, point: [pt[0], pt[1]] };
+          }
+        });
+      };
+      (blueprintData.roads || []).forEach((entry, idx) => checkPolyline(entry, 'roads', idx));
+      (blueprintData.transit || []).forEach((entry, idx) => checkPolyline(entry, 'transit', idx));
+      return best;
+    }
+
     function isCurveSegment(entry, segmentIndex) {
       if (!entry?.polygon || !Array.isArray(entry.curves) || entry.curves.length === 0) return false;
       const count = entry.polygon.length;
@@ -6340,12 +6375,36 @@ function getRoadLineStyle(type) {
 
         if (mode === 'draw-polygon' || mode === 'draw-polyline') {
           // Draft mode: only draft vertices are interactive.
-          const isPolylineTool = editorState.tool === 'polyline';
-          if (isPolylineTool) editorState.targetLayer = 'transit';
           const draftHit = findNearestDraftVertex(snapped, 10);
           if (draftHit) {
             editorState.dragging = { mode: 'draft', index: draftHit.index };
             return;
+          }
+
+          if (mode === 'draw-polyline') {
+            const endpointHit = findNearestLineEndpoint(mapPoint, 12);
+            if (editorState.draft.length === 0) {
+              if (endpointHit) {
+                editorState.draft.push([endpointHit.point[0], endpointHit.point[1]]);
+              } else {
+                editorState.draft.push([snapped.x, snapped.z]);
+              }
+              updateDraftLine();
+              updateDraftMarkers();
+              updateEditorStatus(`Draft points: ${editorState.draft.length}`);
+              return;
+            }
+
+            if (endpointHit) {
+              const last = editorState.draft[editorState.draft.length - 1];
+              const dx = endpointHit.point[0] - last[0];
+              const dz = endpointHit.point[1] - last[1];
+              if (dx * dx + dz * dz > 0.0001) {
+                editorState.draft.push([endpointHit.point[0], endpointHit.point[1]]);
+              }
+              addPolylineFromDraft();
+              return;
+            }
           }
 
           editorState.draft.push([snapped.x, snapped.z]);
