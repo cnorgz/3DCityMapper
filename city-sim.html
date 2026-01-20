@@ -69,6 +69,20 @@
       margin: 2px;
     }
 
+    .btn-mini {
+      padding: 3px 6px;
+      font-size: 12px;
+      line-height: 1;
+      min-width: 26px;
+      min-height: 22px;
+    }
+
+    .editor-mini-row {
+      display: flex;
+      gap: 6px;
+      margin: 4px 0 8px 22px;
+    }
+
     .btn-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -523,6 +537,10 @@
       <input type="checkbox" id="editorEnable" />
       <span>Enable Editor (Fidelity Mode)</span>
     </label>
+    <div class="editor-mini-row">
+      <button class="btn btn-compact btn-mini" id="editorUndo" title="Undo">&#8630;</button>
+      <button class="btn btn-compact btn-mini" id="editorRedo" title="Redo">&#8631;</button>
+    </div>
     <div class="control-row">
       <label for="editorTool">Tool</label>
       <select id="editorTool">
@@ -5946,6 +5964,8 @@ const TRANSIT_STYLES = {
 
     function setupEditorControls() {
       const enableToggle = document.getElementById('editorEnable');
+      const undoBtn = document.getElementById('editorUndo');
+      const redoBtn = document.getElementById('editorRedo');
       const toolSelect = document.getElementById('editorTool');
       const layerSelect = document.getElementById('editorLayer');
       const typeSelect = document.getElementById('editorTypeCode');
@@ -5972,6 +5992,9 @@ const TRANSIT_STYLES = {
         }
         updateEditorUIState();
       });
+
+      if (undoBtn) undoBtn.addEventListener('click', undoEditor);
+      if (redoBtn) redoBtn.addEventListener('click', redoEditor);
 
       if (toolSelect) {
         toolSelect.addEventListener('change', (e) => {
