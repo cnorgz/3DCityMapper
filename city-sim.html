@@ -809,7 +809,6 @@ Object.values(BLUEPRINT_LAYERS).forEach(g => {
   g.visible = false;
   blueprintRootGroup.add(g);
 });
-scene.add(blueprintRootGroup);
 
 // ============================================
 // ZONE REGISTRY
@@ -1201,9 +1200,12 @@ function getRoadLineStyle(type) {
 
     function syncBlueprintRootToOverlay() {
       if (!blueprintRootGroup || !mapOverlayGroup) return;
-      blueprintRootGroup.position.copy(mapOverlayGroup.position);
-      blueprintRootGroup.rotation.copy(mapOverlayGroup.rotation);
-      blueprintRootGroup.scale.copy(mapOverlayGroup.scale);
+      if (blueprintRootGroup.parent !== mapOverlayGroup) {
+        mapOverlayGroup.add(blueprintRootGroup);
+      }
+      blueprintRootGroup.position.set(0, 0, 0);
+      blueprintRootGroup.rotation.set(0, 0, 0);
+      blueprintRootGroup.scale.set(1, 1, 1);
       blueprintRootGroup.updateMatrixWorld();
     }
 
@@ -6382,7 +6384,7 @@ function getRoadLineStyle(type) {
           }
 
           if (mode === 'draw-polyline') {
-            const endpointHit = findNearestLineEndpoint(mapPoint, 12);
+            const endpointHit = findNearestLineEndpoint(mapPoint, 16);
             if (editorState.draft.length === 0) {
               if (endpointHit) {
                 editorState.draft.push([endpointHit.point[0], endpointHit.point[1]]);
@@ -6533,7 +6535,12 @@ function getRoadLineStyle(type) {
         if (!editorState.dragging) {
           if (mode === 'draw-polygon' || mode === 'draw-polyline') {
             if (editorState.draft.length > 0) {
-              editorState.previewPoint = [snapped.x, snapped.z];
+              if (mode === 'draw-polyline') {
+                const endpointHit = findNearestLineEndpoint(mapPoint, 16);
+                editorState.previewPoint = endpointHit ? [endpointHit.point[0], endpointHit.point[1]] : [snapped.x, snapped.z];
+              } else {
+                editorState.previewPoint = [snapped.x, snapped.z];
+              }
             } else {
               editorState.previewPoint = null;
             }
