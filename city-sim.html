@@ -188,6 +188,12 @@
       line-height: 1.5;
     }
 
+    .modal ul {
+      padding-left: 18px;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
     .modal .btn {
       margin-top: 10px;
     }
@@ -412,6 +418,7 @@
     </div>
     <div class="panel compact-panel">
       <button class="btn btn-compact" id="btnFidelityHelp">Fidelity Steps</button>
+      <button class="btn btn-compact" id="btnEditorHelp" style="margin-top: 6px;">Editor Controls</button>
     </div>
   </div>
   
@@ -632,6 +639,20 @@
         <li>Enable “Use Blueprint for City” to view generated 3D.</li>
       </ol>
       <button class="btn" id="closeFidelityHelp">Close</button>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="editorHelpModal">
+    <div class="modal">
+      <h3>Editor Controls</h3>
+      <ul>
+        <li>Draw Polygon/Line: click or tap to place points.</li>
+        <li>Drag a point to move it (draft or selected shapes).</li>
+        <li>Enter: finish polygon/line. Esc: cancel draft.</li>
+        <li>Delete/Backspace: remove hovered draft point or current selection.</li>
+        <li>Select tool: click a shape to edit vertices or drag the shape.</li>
+      </ul>
+      <button class="btn" id="closeEditorHelp">Close</button>
     </div>
   </div>
   
@@ -4525,6 +4546,21 @@ const TRANSIT_STYLES = {
         if (e.target === fidelityModal) fidelityModal.style.display = 'none';
       });
     }
+
+    const editorModal = document.getElementById('editorHelpModal');
+    const editorHelpBtn = document.getElementById('btnEditorHelp');
+    const editorHelpClose = document.getElementById('closeEditorHelp');
+    if (editorHelpBtn && editorModal && editorHelpClose) {
+      editorHelpBtn.addEventListener('click', () => {
+        editorModal.style.display = 'flex';
+      });
+      editorHelpClose.addEventListener('click', () => {
+        editorModal.style.display = 'none';
+      });
+      editorModal.addEventListener('click', (e) => {
+        if (e.target === editorModal) editorModal.style.display = 'none';
+      });
+    }
     
     // Touch Controls - Virtual Joystick
     const joystick = document.getElementById('joystick');
@@ -5408,7 +5444,13 @@ const TRANSIT_STYLES = {
       }
       editorDraftLine.material.color.setHex(lineColor);
 
-      if (!points || points.length < 2) {
+      if (!points || points.length === 0) {
+        editorDraftLine.visible = false;
+        editorDraftGlowLine.visible = false;
+        return;
+      }
+
+      if (points.length < 2 && !editorState.previewPoint) {
         editorDraftLine.visible = false;
         editorDraftGlowLine.visible = false;
         return;
@@ -6152,7 +6194,12 @@ const TRANSIT_STYLES = {
           const mode = getEditorMode();
           if (mode === 'draw-polygon' || mode === 'draw-polyline') {
             if (editorState.draft.length > 0) {
-              editorState.draft.pop();
+              if (editorState.hoverDraftIndex !== null) {
+                editorState.draft.splice(editorState.hoverDraftIndex, 1);
+                editorState.hoverDraftIndex = null;
+              } else {
+                editorState.draft.pop();
+              }
               editorState.previewPoint = null;
               updateDraftLine();
               updateDraftMarkers();
