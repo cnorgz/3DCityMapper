@@ -592,8 +592,11 @@
       <button class="btn" id="editorHeightApply" style="flex: 1; padding: 6px;">Apply Height</button>
     </div>
     <div class="control-row">
-      <label for="editorTransitType">Transit</label>
+      <label for="editorTransitType">Line Type</label>
       <select id="editorTransitType">
+        <option value="ROAD_MAJOR">ROAD MAJOR</option>
+        <option value="ROAD_MINOR">ROAD MINOR</option>
+        <option value="FOOTPATH">FOOTPATH</option>
         <option value="METRO">METRO</option>
         <option value="TRAIN">TRAIN</option>
         <option value="HYPERLOOP">HYPERLOOP</option>
@@ -1037,11 +1040,35 @@ const POI_COLORS = {
   SKYSCRAPER: 0xffcc33
 };
 
+const ROAD_LINE_STYLES = {
+  ROAD_MAJOR: { width: 18, color: 0x2b2b2b, outline: 0xffffff, dash: true, yOffset: 0 },
+  ROAD_MINOR: { width: 12, color: 0x333333, outline: 0xffffff, dash: true, yOffset: 0 },
+  FOOTPATH: { width: 4, color: 0x777777, outline: 0xcccccc, dash: false, yOffset: 0.08 }
+};
+
 const TRANSIT_STYLES = {
   METRO: { color: 0x2f7bff, radius: 2.2 },
   TRAIN: { color: 0xc0c0c0, radius: 2.6 },
   HYPERLOOP: { color: 0x00ffd5, radius: 1.8 }
 };
+
+const LINE_TYPES = new Set(['ROAD_MAJOR', 'ROAD_MINOR', 'FOOTPATH', 'METRO', 'TRAIN', 'HYPERLOOP']);
+const TRANSIT_TYPES = new Set(['METRO', 'TRAIN', 'HYPERLOOP']);
+
+function normalizeLineType(type) {
+  const raw = String(type || '').trim().toUpperCase();
+  if (LINE_TYPES.has(raw)) return raw;
+  return 'ROAD_MINOR';
+}
+
+function isTransitLine(type) {
+  return TRANSIT_TYPES.has(normalizeLineType(type));
+}
+
+function getRoadLineStyle(type) {
+  const normalized = normalizeLineType(type);
+  return ROAD_LINE_STYLES[normalized] || ROAD_LINE_STYLES.ROAD_MINOR;
+}
 
 // Cameras
     const aspect = window.innerWidth / window.innerHeight;
@@ -1263,6 +1290,9 @@ const TRANSIT_STYLES = {
       normalized.transit.forEach((entry) => {
         if (entry && entry.type) entry.type = String(entry.type).toUpperCase();
       });
+      normalized.roads.forEach((entry) => {
+        if (entry && entry.type) entry.type = normalizeLineType(entry.type);
+      });
       return normalized;
     }
 
@@ -1410,6 +1440,15 @@ const TRANSIT_STYLES = {
           if (!Array.isArray(line) || line.length < 2 || !line.every(isFinitePoint)) {
             errors.push(`roads[${idx}] polyline must have >= 2 valid points.`);
           }
+          if (entry.type && typeof entry.type !== 'string') {
+            errors.push(`roads[${idx}] type must be a string when provided.`);
+          }
+          if (entry.width !== undefined && !Number.isFinite(entry.width)) {
+            errors.push(`roads[${idx}] width must be a number when provided.`);
+          }
+          if (entry.type && !LINE_TYPES.has(String(entry.type).toUpperCase())) {
+            warnings.push(`roads[${idx}] type "${entry.type}" is unknown.`);
+          }
         } else {
           errors.push(`roads[${idx}] must define polygon or polyline.`);
         }
@@ -1510,9 +1549,6 @@ const TRANSIT_STYLES = {
       const lineOpacity = blueprintPreviewSettings.opacity;
       const baseOutlineMat = new THREE.LineBasicMaterial({ color: 0x00f0ff, transparent: true, opacity: lineOpacity });
       baseOutlineMat.depthTest = false;
-      const roadOutlineMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: lineOpacity });
-      roadOutlineMat.depthTest = false;
-
       const landFillMat = new THREE.MeshBasicMaterial({
         color: COLORS.land,
         transparent: true,
@@ -1604,7 +1640,10 @@ const TRANSIT_STYLES = {
         } else if (entry.polyline) {
           const pts = entry.polyline.map(p => new THREE.Vector3(p[0], Y.overlay + 0.055, p[1]));
           const geometry = new THREE.BufferGeometry().setFromPoints(pts);
-          const line = new THREE.Line(geometry, roadOutlineMat);
+          const style = getRoadLineStyle(entry.type);
+          const mat = new THREE.LineBasicMaterial({ color: style.outline, transparent: true, opacity: lineOpacity });
+          mat.depthTest = false;
+          const line = new THREE.Line(geometry, mat);
           line.renderOrder = 999;
           blueprintOutlineGroup.add(line);
         }
@@ -1790,8 +1829,13 @@ const TRANSIT_STYLES = {
           const mesh = createPolygonWorld(points, COLORS.road, Y.roads, roadMat);
           if (mesh) BLUEPRINT_LAYERS.roads.add(mesh);
         } else if (entry.polyline) {
-          const width = Number.isFinite(entry.width) ? entry.width : 12;
-          const roadGroup = createRoadSegmentsFromPolyline(entry.polyline, width);
+          const style = getRoadLineStyle(entry.type);
+          const width = Number.isFinite(entry.width) ? entry.width : style.width;
+          const roadGroup = createRoadSegmentsFromPolyline(entry.polyline, width, {
+            color: style.color,
+            yOffset: style.yOffset ?? 0,
+            dashes: style.dash
+          });
           BLUEPRINT_LAYERS.roads.add(roadGroup);
         }
       });
@@ -1868,7 +1912,7 @@ const TRANSIT_STYLES = {
         .filter(entry => entry.polyline)
         .map(entry => ({
           points: entry.polyline,
-          width: Number.isFinite(entry.width) ? entry.width : 12
+          width: Number.isFinite(entry.width) ? entry.width : getRoadLineStyle(entry.type).width
         }));
 
       parkZones.forEach(zone => {
@@ -2113,11 +2157,14 @@ const TRANSIT_STYLES = {
       return mesh;
     }
 
-    function createRoadSegmentsFromPolyline(points, width = 12) {
+    function createRoadSegmentsFromPolyline(points, width = 12, options = {}) {
       const group = new THREE.Group();
       if (!points || points.length < 2) return group;
+      const color = options.color ?? COLORS.road;
+      const yOffset = options.yOffset ?? 0;
+      const includeDashes = options.dashes !== undefined ? options.dashes : true;
       const mat = new THREE.MeshStandardMaterial({
-        color: COLORS.road,
+        color,
         roughness: 0.9,
         metalness: 0.1
       });
@@ -2130,7 +2177,7 @@ const TRANSIT_STYLES = {
         if (length < 0.001) continue;
         const geo = new THREE.BoxGeometry(length, 0.3, width);
         const road = new THREE.Mesh(geo, mat);
-        road.position.set((x1 + x2) / 2, Y.roads, (z1 + z2) / 2);
+        road.position.set((x1 + x2) / 2, Y.roads + yOffset, (z1 + z2) / 2);
         road.rotation.y = Math.atan2(dz, dx);
         road.receiveShadow = true;
         road.material.polygonOffset = true;
@@ -2138,7 +2185,78 @@ const TRANSIT_STYLES = {
         road.material.polygonOffsetUnits = -1;
         group.add(road);
       }
+      if (includeDashes) {
+        const dashes = createRoadDashesFromPolyline(points, {
+          y: Y.roads + yOffset + 0.35,
+          dashColor: 0xdddd44,
+          dashLength: 8,
+          dashWidth: 1.1,
+          spacing: 18
+        });
+        if (dashes) group.add(dashes);
+      }
       return group;
+    }
+
+    function createRoadDashesFromPolyline(points, options = {}) {
+      if (!points || points.length < 2) return null;
+      const spacing = options.spacing ?? 18;
+      const dashLength = options.dashLength ?? 8;
+      const dashWidth = options.dashWidth ?? 1.1;
+      const dashColor = options.dashColor ?? 0xdddd44;
+      const y = options.y ?? (Y.roads + 0.35);
+      const dashGeo = new THREE.BoxGeometry(dashLength, 0.12, dashWidth);
+      const dashMat = new THREE.MeshStandardMaterial({ color: dashColor, roughness: 0.6, metalness: 0.2 });
+      const instances = [];
+
+      for (let i = 0; i < points.length - 1; i++) {
+        const [x1, z1] = points[i];
+        const [x2, z2] = points[i + 1];
+        const dx = x2 - x1;
+        const dz = z2 - z1;
+        const length = Math.hypot(dx, dz);
+        if (length < 0.001) continue;
+        const angle = Math.atan2(dz, dx);
+        const steps = Math.floor(length / spacing);
+        for (let s = 0; s <= steps; s++) {
+          const dist = spacing * 0.5 + s * spacing;
+          if (dist >= length) break;
+          const t = dist / length;
+          instances.push({ x: x1 + dx * t, z: z1 + dz * t, angle });
+        }
+      }
+
+      if (instances.length === 0) return null;
+      const mesh = new THREE.InstancedMesh(dashGeo, dashMat, instances.length);
+      instances.forEach((item, idx) => {
+        _tmpObj.position.set(item.x, y, item.z);
+        _tmpObj.rotation.set(0, item.angle, 0);
+        _tmpObj.updateMatrix();
+        mesh.setMatrixAt(idx, _tmpObj.matrix);
+      });
+      mesh.instanceMatrix.needsUpdate = true;
+      mesh.castShadow = false;
+      mesh.receiveShadow = false;
+      return mesh;
+    }
+
+    function getLaneCenterlines(points, offset = 3) {
+      if (!points || points.length < 2) return { left: [], right: [] };
+      const left = [];
+      const right = [];
+      const count = points.length;
+      for (let i = 0; i < count; i++) {
+        const prev = points[Math.max(0, i - 1)];
+        const next = points[Math.min(count - 1, i + 1)];
+        const dx = next[0] - prev[0];
+        const dz = next[1] - prev[1];
+        const len = Math.hypot(dx, dz) || 1;
+        const nx = -(dz / len);
+        const nz = dx / len;
+        left.push([points[i][0] + nx * offset, points[i][1] + nz * offset]);
+        right.push([points[i][0] - nx * offset, points[i][1] - nz * offset]);
+      }
+      return { left, right };
     }
 
     function createTransitTube(points, radius, color) {
@@ -5414,7 +5532,8 @@ const TRANSIT_STYLES = {
         layerSelect.disabled = editorState.tool === 'polyline';
       }
       if (typeSelect) {
-        typeSelect.disabled = (editorState.targetLayer !== 'zones' && editorState.targetLayer !== 'buildings');
+        typeSelect.disabled = editorState.tool === 'polyline' ||
+          (editorState.targetLayer !== 'zones' && editorState.targetLayer !== 'buildings');
         typeSelect.value = editorState.typeCode;
       }
       if (poiSelect) {
@@ -5422,7 +5541,7 @@ const TRANSIT_STYLES = {
         poiSelect.value = editorState.poiType;
       }
       if (transitSelect) {
-        transitSelect.disabled = (editorState.targetLayer !== 'transit' && editorState.tool !== 'polyline');
+        transitSelect.disabled = (editorState.tool !== 'polyline');
         transitSelect.value = editorState.transitType;
       }
       updateEditorHeightControls();
@@ -5494,7 +5613,16 @@ const TRANSIT_STYLES = {
       const points = editorState.draft;
       const color = LEGEND_LINE_COLORS[editorState.typeCode] ?? 0xffff66;
       let lineColor = color;
-      if (editorState.targetLayer === 'roads') {
+      if (editorState.tool === 'polyline') {
+        const lineType = normalizeLineType(editorState.transitType);
+        if (isTransitLine(lineType)) {
+          const style = TRANSIT_STYLES[lineType] || TRANSIT_STYLES.METRO;
+          lineColor = style.color;
+        } else {
+          const style = getRoadLineStyle(lineType);
+          lineColor = style.outline;
+        }
+      } else if (editorState.targetLayer === 'roads') {
         lineColor = 0xffffff;
       } else if (editorState.targetLayer === 'coastlines') {
         lineColor = 0x00f0ff;
@@ -5502,9 +5630,6 @@ const TRANSIT_STYLES = {
         lineColor = 0xffd27a;
       } else if (editorState.targetLayer === 'sea') {
         lineColor = 0x3aa6ff;
-      } else if (editorState.targetLayer === 'transit') {
-        const style = TRANSIT_STYLES[editorState.transitType] || TRANSIT_STYLES.METRO;
-        lineColor = style.color;
       }
       editorDraftLine.material.color.setHex(lineColor);
 
@@ -5586,7 +5711,8 @@ const TRANSIT_STYLES = {
       setLinePositions(editorSelectionGlowLine, linePoints, isClosed);
 
       if (selection.layer === 'roads') {
-        editorSelectionLine.material.color.setHex(0xffffff);
+        const style = getRoadLineStyle(entry.type);
+        editorSelectionLine.material.color.setHex(style.outline);
       } else if (selection.layer === 'coastlines') {
         editorSelectionLine.material.color.setHex(0x00f0ff);
       } else if (selection.layer === 'beaches') {
@@ -5885,6 +6011,12 @@ const TRANSIT_STYLES = {
       if (edgeHit && edgeHit.layer === 'transit') {
         return { layer: edgeHit.layer, index: edgeHit.index, vertexIndex: null };
       }
+      if (edgeHit && edgeHit.layer === 'roads') {
+        const entry = blueprintData?.roads?.[edgeHit.index];
+        if (entry?.polyline) {
+          return { layer: edgeHit.layer, index: edgeHit.index, vertexIndex: null };
+        }
+      }
       return findPolygonHit(point);
     }
 
@@ -5953,18 +6085,41 @@ const TRANSIT_STYLES = {
       if (!blueprintData) blueprintData = normalizeBlueprintData({});
       if (editorState.draft.length < 2) return;
       pushEditorHistory(snapshotEditorState());
-      const id = `transit-${Date.now()}`;
       const polyline = editorState.draft.map(p => [p[0], p[1]]);
-      blueprintData.transit.push({ id, type: editorState.transitType, polyline, curves: [] });
+      const lineType = normalizeLineType(editorState.transitType);
+      if (isTransitLine(lineType)) {
+        const id = `transit-${Date.now()}`;
+        blueprintData.transit.push({ id, type: lineType, polyline, curves: [] });
+      } else {
+        const style = getRoadLineStyle(lineType);
+        const id = `road-${Date.now()}`;
+        blueprintData.roads.push({
+          id,
+          type: lineType,
+          polyline,
+          width: style.width,
+          curves: []
+        });
+      }
       editorState.draft = [];
       editorState.previewPoint = null;
-      editorState.selected = { layer: 'transit', index: (blueprintData.transit.length - 1), vertexIndex: null };
+      if (isTransitLine(lineType)) {
+        editorState.selected = { layer: 'transit', index: (blueprintData.transit.length - 1), vertexIndex: null };
+      } else {
+        editorState.selected = { layer: 'roads', index: (blueprintData.roads.length - 1), vertexIndex: null };
+      }
       buildBlueprintFromData(blueprintData);
       rebuildBlueprintCity();
       updateDraftLine();
       updateDraftMarkers();
       updateSelectionMarkers();
-      updateEditorStatus('Transit line added.');
+      if (isTransitLine(lineType)) {
+        updateEditorStatus('Transit line added.');
+      } else if (lineType === 'FOOTPATH') {
+        updateEditorStatus('Footpath line added.');
+      } else {
+        updateEditorStatus('Road line added.');
+      }
     }
 
     function deleteSelection() {
@@ -6049,9 +6204,6 @@ const TRANSIT_STYLES = {
       if (toolSelect) {
         toolSelect.addEventListener('change', (e) => {
           editorState.tool = e.target.value;
-          if (editorState.tool === 'polyline') {
-            editorState.targetLayer = 'transit';
-          }
       if (editorState.tool === 'polygon' || editorState.tool === 'polyline') {
         editorState.selected = null;
         updateSelectionMarkers();
