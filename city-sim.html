@@ -874,9 +874,10 @@ const editorState = {
     poiType: 'METRO_STATION',
     transitType: 'METRO',
     snapGrid: false,
-    snapPixels: false,
-    pixelStep: 10,
-    draft: [],
+  snapPixels: false,
+  pixelStep: 10,
+  draft: [],
+  previewPoint: null,
   selected: null,
   dragging: null,
   hover: null,
@@ -5392,48 +5393,64 @@ const TRANSIT_STYLES = {
       if (!editorDraftLine || !editorDraftGlowLine) return;
       const points = editorState.draft;
       const color = LEGEND_LINE_COLORS[editorState.typeCode] ?? 0xffff66;
+      let lineColor = color;
       if (editorState.targetLayer === 'roads') {
-        editorDraftLine.material.color.setHex(0xffffff);
+        lineColor = 0xffffff;
       } else if (editorState.targetLayer === 'coastlines') {
-        editorDraftLine.material.color.setHex(0x00f0ff);
+        lineColor = 0x00f0ff;
       } else if (editorState.targetLayer === 'beaches') {
-        editorDraftLine.material.color.setHex(0xffd27a);
+        lineColor = 0xffd27a;
       } else if (editorState.targetLayer === 'sea') {
-        editorDraftLine.material.color.setHex(0x3aa6ff);
+        lineColor = 0x3aa6ff;
       } else if (editorState.targetLayer === 'transit') {
         const style = TRANSIT_STYLES[editorState.transitType] || TRANSIT_STYLES.METRO;
-        editorDraftLine.material.color.setHex(style.color);
-      } else {
-        editorDraftLine.material.color.setHex(color);
+        lineColor = style.color;
       }
+      editorDraftLine.material.color.setHex(lineColor);
+
       if (!points || points.length < 2) {
         editorDraftLine.visible = false;
         editorDraftGlowLine.visible = false;
         return;
       }
-      setLinePositions(editorDraftLine, points, false);
+      const renderPoints = points.slice();
+      if (editorState.previewPoint && points.length >= 1) {
+        renderPoints.push(editorState.previewPoint);
+      }
+      setLinePositions(editorDraftLine, renderPoints, false);
       editorDraftLine.visible = true;
-      setLinePositions(editorDraftGlowLine, points, false);
+      setLinePositions(editorDraftGlowLine, renderPoints, false);
       editorDraftGlowLine.visible = true;
     }
 
     function updateDraftMarkers() {
       if (!editorDraftVertexGroup) return;
       resetGroup(editorDraftVertexGroup);
+      const mode = getEditorMode();
+      if (mode !== 'draw-polygon' && mode !== 'draw-polyline') return;
       const points = editorState.draft;
       if (!points || points.length === 0) return;
 
-      const radius = 4;
-      const geo = new THREE.SphereGeometry(radius, 10, 10);
+      const baseRadius = 5.2;
+      const lastRadius = baseRadius * 1.3;
+      const baseGeo = new THREE.SphereGeometry(baseRadius, 10, 10);
+      const lastGeo = new THREE.SphereGeometry(lastRadius, 10, 10);
+      const lastIndex = points.length - 1;
+
       points.forEach((pt, idx) => {
         const hovered = editorState.hoverDraftIndex === idx;
+        const isLast = idx === lastIndex;
+        const color = hovered ? 0x000000 : 0xffffff;
         const mat = new THREE.MeshBasicMaterial({
-          color: 0xffffff,
+          color,
           transparent: true,
-          opacity: hovered ? 0.55 : 1.0
+          opacity: hovered ? 0.95 : 0.9,
+          depthTest: false,
+          depthWrite: false
         });
-        const sphere = new THREE.Mesh(geo, mat);
-        sphere.position.set(pt[0], Y.overlay + 0.09, pt[1]);
+        const sphere = new THREE.Mesh(isLast ? lastGeo : baseGeo, mat);
+        sphere.position.set(pt[0], Y.overlay + 0.12, pt[1]);
+        sphere.renderOrder = 1002;
         editorDraftVertexGroup.add(sphere);
       });
     }
@@ -5475,7 +5492,7 @@ const TRANSIT_STYLES = {
       editorSelectionLine.visible = true;
       editorSelectionGlowLine.visible = true;
 
-      const sphereGeo = new THREE.SphereGeometry(4, 10, 10);
+      const sphereGeo = new THREE.SphereGeometry(6.5, 10, 10);
       const vertexPoints = entry.polyline ? entry.polyline : entry.polygon;
       if (!vertexPoints) return;
       vertexPoints.forEach((pt, idx) => {
@@ -5484,20 +5501,16 @@ const TRANSIT_STYLES = {
           editorState.hover.layer === selection.layer &&
           editorState.hover.index === selection.index &&
           editorState.hover.vertexIndex === idx;
-        const baseColor = selection.layer === 'transit'
-          ? (TRANSIT_STYLES[String(entry.type || '').toUpperCase()] || TRANSIT_STYLES.METRO).color
-          : (selection.layer === 'beaches'
-            ? 0xffd27a
-            : (selection.layer === 'sea'
-              ? 0x3aa6ff
-              : (LEGEND_LINE_COLORS[normalizeTypeCode(entry.typeCode)] ?? 0xffffff)));
         const mat = new THREE.MeshBasicMaterial({
-          color: isActive ? 0xffffff : baseColor,
+          color: (isActive || isHovered) ? 0x000000 : 0xffffff,
           transparent: true,
-          opacity: isHovered ? 0.55 : 0.95
+          opacity: (isActive || isHovered) ? 0.95 : 0.9,
+          depthTest: false,
+          depthWrite: false
         });
         const sphere = new THREE.Mesh(sphereGeo, mat);
-        sphere.position.set(pt[0], Y.overlay + 0.09, pt[1]);
+        sphere.position.set(pt[0], Y.overlay + 0.12, pt[1]);
+        sphere.renderOrder = 1002;
         editorVertexGroup.add(sphere);
       });
     }
@@ -5623,6 +5636,17 @@ const TRANSIT_STYLES = {
       return best;
     }
 
+    function isCurveSegment(entry, segmentIndex) {
+      if (!entry?.polygon || !Array.isArray(entry.curves) || entry.curves.length === 0) return false;
+      const count = entry.polygon.length;
+      return entry.curves.some((curveIndex) => {
+        if (!Number.isInteger(curveIndex)) return false;
+        const prevSegment = curveIndex === 0 ? count : curveIndex;
+        const nextSegment = curveIndex + 1 > count ? 1 : curveIndex + 1;
+        return segmentIndex === prevSegment || segmentIndex === nextSegment;
+      });
+    }
+
     function getRenderPolygonPoints(entry) {
       if (!entry?.polygon || entry.polygon.length < 2) return [];
       const curveSet = new Set(entry.curves || []);
@@ -5687,11 +5711,11 @@ const TRANSIT_STYLES = {
       editorState.hover = null;
       editorState.hoverDraftIndex = null;
       const mode = getEditorMode();
-      const draftHit = findNearestDraftVertex(point, 10);
-      if (draftHit) {
-        editorState.hoverDraftIndex = draftHit.index;
-        updateDraftMarkers();
-        return;
+      if (mode === 'draw-polygon' || mode === 'draw-polyline') {
+        const draftHit = findNearestDraftVertex(point, 10);
+        if (draftHit) {
+          editorState.hoverDraftIndex = draftHit.index;
+        }
       }
       if (mode === 'edit') {
         const selected = getSelectedEntry();
@@ -5703,15 +5727,9 @@ const TRANSIT_STYLES = {
               index: selected.index,
               vertexIndex: hit.vertexIndex
             };
-            updateSelectionMarkers();
           }
         }
-      } else if (mode === 'select') {
-        const vertexHit = findNearestVertex(point, 10);
-        if (vertexHit) {
-          editorState.hover = vertexHit;
-          updateSelectionMarkers();
-        }
+        updateSelectionMarkers();
       }
       updateDraftMarkers();
     }
@@ -5738,6 +5756,7 @@ const TRANSIT_STYLES = {
       }
 
       editorState.draft = [];
+      editorState.previewPoint = null;
       editorState.selected = { layer: editorState.targetLayer, index: (blueprintData[editorState.targetLayer].length - 1), vertexIndex: null };
       buildBlueprintFromData(blueprintData);
       rebuildBlueprintCity();
@@ -5754,6 +5773,7 @@ const TRANSIT_STYLES = {
       const polyline = editorState.draft.map(p => [p[0], p[1]]);
       blueprintData.transit.push({ id, type: editorState.transitType, polyline, curves: [] });
       editorState.draft = [];
+      editorState.previewPoint = null;
       editorState.selected = { layer: 'transit', index: (blueprintData.transit.length - 1), vertexIndex: null };
       buildBlueprintFromData(blueprintData);
       rebuildBlueprintCity();
@@ -5838,14 +5858,15 @@ const TRANSIT_STYLES = {
           if (editorState.tool === 'polyline') {
             editorState.targetLayer = 'transit';
           }
-          if (editorState.tool === 'polygon' || editorState.tool === 'polyline') {
-            editorState.selected = null;
-            updateSelectionMarkers();
-          }
-          if (editorState.tool !== 'polygon' && editorState.tool !== 'polyline') {
-            editorState.draft = [];
-            updateDraftLine();
-          }
+      if (editorState.tool === 'polygon' || editorState.tool === 'polyline') {
+        editorState.selected = null;
+        updateSelectionMarkers();
+      }
+      if (editorState.tool !== 'polygon' && editorState.tool !== 'polyline') {
+        editorState.draft = [];
+        editorState.previewPoint = null;
+        updateDraftLine();
+      }
           updateEditorUIState();
           updateEditorStatus(`Tool: ${editorState.tool}`);
         });
@@ -5989,6 +6010,10 @@ const TRANSIT_STYLES = {
             if (edgeHit) {
               const points = selected.entry.polyline ? selected.entry.polyline : selected.entry.polygon;
               if (points) {
+                if (selected.entry.polygon && isCurveSegment(selected.entry, edgeHit.segmentIndex)) {
+                  updateEditorStatus('Curve segment locked. Use the curve handle.');
+                  return;
+                }
                 if (selected.entry.polygon) {
                   if (!Array.isArray(selected.entry.curves)) selected.entry.curves = [];
                   selected.entry.curves = selected.entry.curves.map(c => (c >= edgeHit.segmentIndex ? c + 1 : c));
@@ -6053,8 +6078,17 @@ const TRANSIT_STYLES = {
         const mapPoint = getPointerMapPoint(e);
         if (!mapPoint) return;
         const snapped = snapMapPoint(mapPoint);
+        const mode = getEditorMode();
 
         if (!editorState.dragging) {
+          if (mode === 'draw-polygon' || mode === 'draw-polyline') {
+            if (editorState.draft.length > 0) {
+              editorState.previewPoint = [snapped.x, snapped.z];
+            } else {
+              editorState.previewPoint = null;
+            }
+            updateDraftLine();
+          }
           updateEditorHover(snapped);
           return;
         }
@@ -6110,11 +6144,23 @@ const TRANSIT_STYLES = {
           if (editorState.tool === 'polyline') addPolylineFromDraft();
         } else if (e.key === 'Escape') {
           editorState.draft = [];
+          editorState.previewPoint = null;
           updateDraftLine();
           updateDraftMarkers();
           updateEditorStatus('Draft cancelled.');
         } else if (e.key === 'Delete' || e.key === 'Backspace') {
-          deleteSelection();
+          const mode = getEditorMode();
+          if (mode === 'draw-polygon' || mode === 'draw-polyline') {
+            if (editorState.draft.length > 0) {
+              editorState.draft.pop();
+              editorState.previewPoint = null;
+              updateDraftLine();
+              updateDraftMarkers();
+              updateEditorStatus(`Draft points: ${editorState.draft.length}`);
+            }
+          } else {
+            deleteSelection();
+          }
         }
       });
     }
