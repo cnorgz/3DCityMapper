@@ -584,6 +584,14 @@
       </select>
     </div>
     <div class="control-row">
+      <label for="editorHeightRange">Height (m)</label>
+      <input type="range" id="editorHeightRange" min="0" max="2000" step="1" value="0" />
+      <input type="number" id="editorHeightValue" min="0" max="2000" step="1" value="0" />
+    </div>
+    <div class="overlay-actions">
+      <button class="btn" id="editorHeightApply" style="flex: 1; padding: 6px;">Apply Height</button>
+    </div>
+    <div class="control-row">
       <label for="editorTransitType">Transit</label>
       <select id="editorTransitType">
         <option value="METRO">METRO</option>
@@ -1009,6 +1017,14 @@ function getLegendInfo(code) {
     height: 18,
     buildable: true
   };
+}
+
+function getEntryHeight(entry) {
+  if (!entry) return 0;
+  if (Number.isFinite(entry.heightMeters)) return entry.heightMeters;
+  if (Number.isFinite(entry.height)) return entry.height;
+  const info = getLegendInfo(entry.typeCode);
+  return info.height;
 }
 
 const POI_COLORS = {
@@ -1821,7 +1837,7 @@ const TRANSIT_STYLES = {
         const info = getLegendInfo(entry.typeCode);
         if (!info.buildable) return;
         const points = getRenderPolygonPoints(entry);
-        const height = Number.isFinite(entry.height) ? entry.height : info.height;
+        const height = getEntryHeight(entry);
         const mesh = createBuildingWorld(points, info.color, height, Y.buildings);
         if (mesh) {
           mesh.userData = { label: normalizeTypeCode(entry.typeCode), type: info.type };
@@ -5409,6 +5425,30 @@ const TRANSIT_STYLES = {
         transitSelect.disabled = (editorState.targetLayer !== 'transit' && editorState.tool !== 'polyline');
         transitSelect.value = editorState.transitType;
       }
+      updateEditorHeightControls();
+    }
+
+    function updateEditorHeightControls() {
+      const heightRange = document.getElementById('editorHeightRange');
+      const heightValue = document.getElementById('editorHeightValue');
+      const heightApply = document.getElementById('editorHeightApply');
+      if (!heightRange || !heightValue || !heightApply) return;
+      const selected = getSelectedEntry();
+      const entry = selected?.entry || null;
+      const isBuilding = selected?.layer === 'buildings';
+      const info = entry ? getLegendInfo(entry.typeCode) : null;
+      const enabled = !!(isBuilding && info?.buildable);
+      heightRange.disabled = !enabled;
+      heightValue.disabled = !enabled;
+      heightApply.disabled = !enabled;
+      if (!enabled) {
+        heightRange.value = 0;
+        heightValue.value = 0;
+        return;
+      }
+      const height = Math.max(0, Math.min(2000, Math.round(getEntryHeight(entry))));
+      heightRange.value = height;
+      heightValue.value = height;
     }
 
     function getPointerMapPoint(event) {
@@ -5528,9 +5568,15 @@ const TRANSIT_STYLES = {
       editorSelectionGlowLine.visible = false;
 
       const selection = editorState.selected;
-      if (!selection || !blueprintData) return;
+      if (!selection || !blueprintData) {
+        updateEditorHeightControls();
+        return;
+      }
       const list = blueprintData[selection.layer];
-      if (!list || !list[selection.index]) return;
+      if (!list || !list[selection.index]) {
+        updateEditorHeightControls();
+        return;
+      }
       const entry = list[selection.index];
       const linePoints = entry.polyline ? entry.polyline : getRenderPolygonPoints(entry);
       if (!linePoints || linePoints.length < 2) return;
@@ -5579,6 +5625,7 @@ const TRANSIT_STYLES = {
         sphere.renderOrder = 1002;
         editorVertexGroup.add(sphere);
       });
+      updateEditorHeightControls();
     }
 
     function findNearestVertex(point, threshold) {
@@ -5971,6 +6018,9 @@ const TRANSIT_STYLES = {
       const typeSelect = document.getElementById('editorTypeCode');
       const poiSelect = document.getElementById('editorPoiType');
       const transitSelect = document.getElementById('editorTransitType');
+      const heightRange = document.getElementById('editorHeightRange');
+      const heightValue = document.getElementById('editorHeightValue');
+      const heightApply = document.getElementById('editorHeightApply');
       const snapGridToggle = document.getElementById('editorSnapGrid');
       const snapPixelToggle = document.getElementById('editorSnapPixels');
       const pixelStepInput = document.getElementById('editorPixelStep');
@@ -6046,6 +6096,33 @@ const TRANSIT_STYLES = {
           editorState.transitType = e.target.value;
           updateDraftLine();
           updateSelectionMarkers();
+        });
+      }
+
+      if (heightRange && heightValue) {
+        heightRange.addEventListener('input', (e) => {
+          heightValue.value = e.target.value;
+        });
+        heightValue.addEventListener('input', (e) => {
+          heightRange.value = e.target.value;
+        });
+      }
+
+      if (heightApply) {
+        heightApply.addEventListener('click', () => {
+          const selected = getSelectedEntry();
+          if (!selected || selected.layer !== 'buildings') return;
+          const info = getLegendInfo(selected.entry.typeCode);
+          if (!info.buildable) return;
+          const height = Math.max(0, Math.min(2000, Number.parseFloat(heightValue?.value)));
+          if (!Number.isFinite(height)) return;
+          pushEditorHistory(snapshotEditorState());
+          selected.entry.height = height;
+          selected.entry.heightMeters = height;
+          buildBlueprintFromData(blueprintData);
+          rebuildBlueprintCity();
+          updateSelectionMarkers();
+          updateEditorStatus(`Height set to ${Math.round(height)}m.`);
         });
       }
 
