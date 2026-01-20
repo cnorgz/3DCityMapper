@@ -906,6 +906,12 @@ const editorState = {
   hideCity: false
 };
 
+const editorHistory = {
+  undo: [],
+  redo: [],
+  limit: 80
+};
+
 let blueprintCityEnabled = false;
 let blueprintZoneMeshes = [];
 let blueprintLabelGroup = null;
@@ -5606,6 +5612,75 @@ const TRANSIT_STYLES = {
       return { entry: list[index], layer, index };
     }
 
+    function cloneBlueprintData(data) {
+      const fallback = normalizeBlueprintData({});
+      if (!data) return fallback;
+      try {
+        return JSON.parse(JSON.stringify(data));
+      } catch (e) {
+        console.warn('Blueprint clone failed, resetting.', e);
+        return fallback;
+      }
+    }
+
+    function snapshotEditorState() {
+      return {
+        blueprint: cloneBlueprintData(blueprintData),
+        selected: editorState.selected ? { ...editorState.selected } : null
+      };
+    }
+
+    function pushEditorHistory(snapshot) {
+      if (!snapshot) return;
+      editorHistory.undo.push(snapshot);
+      if (editorHistory.undo.length > editorHistory.limit) {
+        editorHistory.undo.shift();
+      }
+      editorHistory.redo = [];
+    }
+
+    function applyEditorSnapshot(snapshot, label) {
+      blueprintData = normalizeBlueprintData(snapshot?.blueprint || {});
+      editorState.draft = [];
+      editorState.previewPoint = null;
+      editorState.hover = null;
+      editorState.hoverDraftIndex = null;
+      if (snapshot?.selected &&
+        blueprintData?.[snapshot.selected.layer]?.[snapshot.selected.index]) {
+        editorState.selected = { ...snapshot.selected };
+      } else {
+        editorState.selected = null;
+      }
+      buildBlueprintFromData(blueprintData);
+      rebuildBlueprintCity();
+      updateDraftLine();
+      updateDraftMarkers();
+      updateSelectionMarkers();
+      updateEditorStatus(label || 'History applied.');
+    }
+
+    function undoEditor() {
+      if (editorHistory.undo.length === 0) {
+        updateEditorStatus('Undo: nothing to undo.');
+        return;
+      }
+      const current = snapshotEditorState();
+      const snapshot = editorHistory.undo.pop();
+      editorHistory.redo.push(current);
+      applyEditorSnapshot(snapshot, 'Undo.');
+    }
+
+    function redoEditor() {
+      if (editorHistory.redo.length === 0) {
+        updateEditorStatus('Redo: nothing to redo.');
+        return;
+      }
+      const current = snapshotEditorState();
+      const snapshot = editorHistory.redo.pop();
+      editorHistory.undo.push(current);
+      applyEditorSnapshot(snapshot, 'Redo.');
+    }
+
     function findNearestDraftVertex(point, threshold) {
       if (!editorState.draft || editorState.draft.length === 0) return null;
       const thresh2 = threshold * threshold;
@@ -5780,6 +5855,7 @@ const TRANSIT_STYLES = {
       if (!blueprintData) blueprintData = normalizeBlueprintData({});
       if (editorState.draft.length < 3) return;
 
+      pushEditorHistory(snapshotEditorState());
       const id = `${editorState.targetLayer}-${Date.now()}`;
       const polygon = editorState.draft.map(p => [p[0], p[1]]);
 
@@ -5811,6 +5887,7 @@ const TRANSIT_STYLES = {
     function addPolylineFromDraft() {
       if (!blueprintData) blueprintData = normalizeBlueprintData({});
       if (editorState.draft.length < 2) return;
+      pushEditorHistory(snapshotEditorState());
       const id = `transit-${Date.now()}`;
       const polyline = editorState.draft.map(p => [p[0], p[1]]);
       blueprintData.transit.push({ id, type: editorState.transitType, polyline, curves: [] });
@@ -5827,6 +5904,7 @@ const TRANSIT_STYLES = {
 
     function deleteSelection() {
       if (!blueprintData || !editorState.selected) return;
+      pushEditorHistory(snapshotEditorState());
       const { layer, index, vertexIndex } = editorState.selected;
       const list = blueprintData[layer];
       if (!list || !list[index]) return;
@@ -5858,6 +5936,7 @@ const TRANSIT_STYLES = {
 
     function addPoiAt(point) {
       if (!blueprintData) blueprintData = normalizeBlueprintData({});
+      pushEditorHistory(snapshotEditorState());
       const id = `poi-${Date.now()}`;
       blueprintData.pois.push({ id, type: editorState.poiType, position: [point.x, point.z] });
       buildBlueprintFromData(blueprintData);
@@ -5969,6 +6048,7 @@ const TRANSIT_STYLES = {
 
       if (clearBtn) {
         clearBtn.addEventListener('click', () => {
+          pushEditorHistory(snapshotEditorState());
           blueprintData = normalizeBlueprintData({});
           editorState.draft = [];
           editorState.selected = null;
@@ -6034,6 +6114,7 @@ const TRANSIT_STYLES = {
           if (selected) {
             const vertexHit = findNearestVertexInEntry(selected.entry, snapped, 10);
             if (vertexHit) {
+              const historySnapshot = snapshotEditorState();
               editorState.selected = {
                 layer: selected.layer,
                 index: selected.index,
@@ -6043,7 +6124,10 @@ const TRANSIT_STYLES = {
               editorState.dragging = {
                 mode: 'vertex',
                 start: { x: snapped.x, z: snapped.z },
-                original: null
+                original: null,
+                historySnapshot,
+                historyPushed: false,
+                didMove: false
               };
               return;
             }
@@ -6056,6 +6140,7 @@ const TRANSIT_STYLES = {
                   updateEditorStatus('Curve segment locked. Use the curve handle.');
                   return;
                 }
+                pushEditorHistory(snapshotEditorState());
                 if (selected.entry.polygon) {
                   if (!Array.isArray(selected.entry.curves)) selected.entry.curves = [];
                   selected.entry.curves = selected.entry.curves.map(c => (c >= edgeHit.segmentIndex ? c + 1 : c));
@@ -6072,12 +6157,16 @@ const TRANSIT_STYLES = {
             }
 
             if (selected.entry.polygon && pointInPolygon(snapped.x, snapped.z, selected.entry.polygon)) {
+              const historySnapshot = snapshotEditorState();
               editorState.dragging = {
                 mode: 'polygon',
                 start: { x: snapped.x, z: snapped.z },
                 original: selected.entry.polygon.map(p => [p[0], p[1]]),
                 curves: Array.isArray(selected.entry.curves) ? [...selected.entry.curves] : [],
-                isPolyline: false
+                isPolyline: false,
+                historySnapshot,
+                historyPushed: false,
+                didMove: false
               };
               return;
             }
@@ -6093,21 +6182,29 @@ const TRANSIT_STYLES = {
         updateSelectionMarkers();
 
         if (selection && selection.vertexIndex !== null) {
+          const historySnapshot = snapshotEditorState();
           editorState.dragging = {
             mode: 'vertex',
             start: { x: snapped.x, z: snapped.z },
-            original: null
+            original: null,
+            historySnapshot,
+            historyPushed: false,
+            didMove: false
           };
         } else if (selection) {
           const list = blueprintData?.[selection.layer];
           const entry = list?.[selection.index];
           if (entry?.polygon || entry?.polyline) {
+            const historySnapshot = snapshotEditorState();
             editorState.dragging = {
               mode: 'polygon',
               start: { x: snapped.x, z: snapped.z },
               original: (entry.polyline || entry.polygon).map(p => [p[0], p[1]]),
               curves: Array.isArray(entry.curves) ? [...entry.curves] : [],
-              isPolyline: !!entry.polyline
+              isPolyline: !!entry.polyline,
+              historySnapshot,
+              historyPushed: false,
+              didMove: false
             };
           }
         } else {
@@ -6157,6 +6254,7 @@ const TRANSIT_STYLES = {
           } else if (entry.polygon) {
             entry.polygon[vertexIndex] = [snapped.x, snapped.z];
           }
+          editorState.dragging.didMove = true;
         } else if (editorState.dragging.mode === 'polygon' && editorState.dragging.original) {
           const dx = snapped.x - editorState.dragging.start.x;
           const dz = snapped.z - editorState.dragging.start.z;
@@ -6169,6 +6267,7 @@ const TRANSIT_STYLES = {
               entry.curves = editorState.dragging.curves || entry.curves;
             }
           }
+          editorState.dragging.didMove = true;
         }
         buildBlueprintFromData(blueprintData);
         rebuildBlueprintCity();
@@ -6176,11 +6275,33 @@ const TRANSIT_STYLES = {
       });
 
       renderer.domElement.addEventListener('pointerup', () => {
+        if (editorState.dragging?.historySnapshot &&
+          editorState.dragging.didMove &&
+          !editorState.dragging.historyPushed) {
+          pushEditorHistory(editorState.dragging.historySnapshot);
+        }
         editorState.dragging = null;
       });
 
       window.addEventListener('keydown', (e) => {
         if (!editorActive()) return;
+        const activeEl = document.activeElement;
+        const isTextInput = activeEl &&
+          (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.isContentEditable);
+        if (!isTextInput && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+          e.preventDefault();
+          if (e.shiftKey) {
+            redoEditor();
+          } else {
+            undoEditor();
+          }
+          return;
+        }
+        if (!isTextInput && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+          e.preventDefault();
+          redoEditor();
+          return;
+        }
         if (e.key === 'Enter') {
           if (editorState.tool === 'polygon') addPolygonFromDraft();
           if (editorState.tool === 'polyline') addPolylineFromDraft();
