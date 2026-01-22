@@ -1863,8 +1863,7 @@ function getRoadLineStyle(type) {
         } else if (entry.polyline) {
           const style = getRoadLineStyle(entry.type);
           const width = Number.isFinite(entry.width) ? entry.width : style.width;
-          // Flip Z for meshes to counteract the overlay plane UV orientation.
-          const roadPoints = toWorldPolyline(entry.polyline, -1);
+          const roadPoints = toWorldPolyline(entry.polyline, 1);
           const roadGroup = createRoadSegmentsFromPolyline(roadPoints, width, {
             color: style.color,
             yOffset: style.yOffset ?? 0,
@@ -2206,6 +2205,7 @@ function getRoadLineStyle(type) {
       const color = options.color ?? COLORS.road;
       const yOffset = options.yOffset ?? 0;
       const includeDashes = options.dashes !== undefined ? options.dashes : true;
+      const dashY = Y.roads + yOffset + 0.16;
       const mat = new THREE.MeshStandardMaterial({
         color,
         roughness: 0.9,
@@ -2230,7 +2230,7 @@ function getRoadLineStyle(type) {
       }
       if (includeDashes) {
         const dashes = createRoadDashesFromPolyline(points, {
-          y: Y.roads + yOffset + 0.35,
+          y: dashY + 0.02,
           dashColor: 0xdddd44,
           dashLength: 8,
           dashWidth: 1.1,
@@ -5570,6 +5570,31 @@ function getRoadLineStyle(type) {
       line.visible = true;
     }
 
+    function getRoadSurfaceY(lineType) {
+      const style = getRoadLineStyle(lineType);
+      const yOffset = style?.yOffset ?? 0;
+      return Y.roads + yOffset;
+    }
+
+    function getEditorLineYForPolyline(lineType) {
+      const normalized = normalizeLineType(lineType);
+      if (isTransitLine(normalized)) return Y.roads + 0.6;
+      return getRoadSurfaceY(normalized);
+    }
+
+    function setEditorLineHeights(yValue, { draft = false, selection = false } = {}) {
+      const yMain = yValue;
+      const yGlow = yValue + 0.001;
+      if (draft) {
+        if (editorDraftLine) editorDraftLine.position.y = yMain;
+        if (editorDraftGlowLine) editorDraftGlowLine.position.y = yGlow;
+      }
+      if (selection) {
+        if (editorSelectionLine) editorSelectionLine.position.y = yMain;
+        if (editorSelectionGlowLine) editorSelectionGlowLine.position.y = yGlow;
+      }
+    }
+
     function updateEditorUIState() {
       const toolSelect = document.getElementById('editorTool');
       const layerSelect = document.getElementById('editorLayer');
@@ -5672,14 +5697,21 @@ function getRoadLineStyle(type) {
           const style = getRoadLineStyle(lineType);
           lineColor = style.outline;
         }
+        setEditorLineHeights(getEditorLineYForPolyline(lineType), { draft: true });
       } else if (editorState.targetLayer === 'roads') {
         lineColor = 0xffffff;
+        setEditorLineHeights(getRoadSurfaceY('ROAD_MAJOR'), { draft: true });
       } else if (editorState.targetLayer === 'coastlines') {
         lineColor = 0x00f0ff;
+        setEditorLineHeights(Y.overlay + 0.07, { draft: true });
       } else if (editorState.targetLayer === 'beaches') {
         lineColor = 0xffd27a;
+        setEditorLineHeights(Y.overlay + 0.07, { draft: true });
       } else if (editorState.targetLayer === 'sea') {
         lineColor = 0x3aa6ff;
+        setEditorLineHeights(Y.overlay + 0.07, { draft: true });
+      } else {
+        setEditorLineHeights(Y.overlay + 0.07, { draft: true });
       }
       editorDraftLine.material.color.setHex(lineColor);
 
@@ -5814,19 +5846,25 @@ function getRoadLineStyle(type) {
       if (selection.layer === 'roads') {
         const style = getRoadLineStyle(entry.type);
         editorSelectionLine.material.color.setHex(style.outline);
+        setEditorLineHeights(getRoadSurfaceY(entry.type), { selection: true });
       } else if (selection.layer === 'coastlines') {
         editorSelectionLine.material.color.setHex(0x00f0ff);
+        setEditorLineHeights(Y.overlay + 0.08, { selection: true });
       } else if (selection.layer === 'beaches') {
         editorSelectionLine.material.color.setHex(0xffd27a);
+        setEditorLineHeights(Y.overlay + 0.08, { selection: true });
       } else if (selection.layer === 'sea') {
         editorSelectionLine.material.color.setHex(0x3aa6ff);
+        setEditorLineHeights(Y.overlay + 0.08, { selection: true });
       } else if (selection.layer === 'transit') {
         const type = String(entry.type || '').toUpperCase();
         const style = TRANSIT_STYLES[type] || TRANSIT_STYLES.METRO;
         editorSelectionLine.material.color.setHex(style.color);
+        setEditorLineHeights(getEditorLineYForPolyline(type), { selection: true });
       } else {
         const code = normalizeTypeCode(entry.typeCode);
         editorSelectionLine.material.color.setHex(LEGEND_LINE_COLORS[code] ?? 0xffff66);
+        setEditorLineHeights(Y.overlay + 0.08, { selection: true });
       }
       editorSelectionLine.visible = true;
       editorSelectionGlowLine.visible = true;
