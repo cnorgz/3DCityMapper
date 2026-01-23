@@ -1958,6 +1958,16 @@ function getRoadLineStyle(type) {
               miterLimit: 4
             });
             if (ribbon) BLUEPRINT_LAYERS.roads.add(ribbon);
+            if (style.dash) {
+              const dashes = createRoadDashesFromPolyline(roadPoints, {
+                y: Y.roads + (style.yOffset ?? 0) + 0.02,
+                dashColor: 0xdddd44,
+                dashLength: 8,
+                dashWidth: 1.1,
+                spacing: 18
+              });
+              if (dashes) BLUEPRINT_LAYERS.roads.add(dashes);
+            }
           } else {
             const roadGroup = createRoadSegmentsFromPolyline(roadPoints, width, {
               color: style.color,
