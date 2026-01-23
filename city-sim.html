@@ -1903,7 +1903,11 @@ function getRoadLineStyle(type) {
       const roadMat = new THREE.MeshStandardMaterial({
         color: COLORS.road,
         roughness: 0.9,
-        metalness: 0.1
+        metalness: 0.1,
+        side: THREE.DoubleSide,
+        polygonOffset: true,
+        polygonOffsetFactor: -1,
+        polygonOffsetUnits: -1
       });
       const roadMatCache = new Map();
       const getRoadMaterial = (color) => {
@@ -1911,7 +1915,11 @@ function getRoadLineStyle(type) {
         const mat = new THREE.MeshStandardMaterial({
           color,
           roughness: 0.9,
-          metalness: 0.1
+          metalness: 0.1,
+          side: THREE.DoubleSide,
+          polygonOffset: true,
+          polygonOffsetFactor: -1,
+          polygonOffsetUnits: -1
         });
         roadMatCache.set(color, mat);
         return mat;
@@ -5751,7 +5759,11 @@ function getRoadLineStyle(type) {
         transparent: true,
         opacity: 0.6,
         depthWrite: false,
-        depthTest: true
+        depthTest: true,
+        side: THREE.DoubleSide,
+        polygonOffset: true,
+        polygonOffsetFactor: -1,
+        polygonOffsetUnits: -1
       });
       editorDraftRibbon = new THREE.Mesh(new THREE.BufferGeometry(), ribbonDraftMat);
       editorDraftRibbon.renderOrder = 998;
@@ -5763,7 +5775,11 @@ function getRoadLineStyle(type) {
         transparent: true,
         opacity: 0.75,
         depthWrite: false,
-        depthTest: true
+        depthTest: true,
+        side: THREE.DoubleSide,
+        polygonOffset: true,
+        polygonOffsetFactor: -1,
+        polygonOffsetUnits: -1
       });
       editorSelectionRibbon = new THREE.Mesh(new THREE.BufferGeometry(), ribbonSelectMat);
       editorSelectionRibbon.renderOrder = 997;
