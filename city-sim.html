@@ -2485,8 +2485,16 @@ function getRoadLineStyle(type) {
       const dashWidth = options.dashWidth ?? 1.1;
       const dashColor = options.dashColor ?? 0xdddd44;
       const y = options.y ?? (Y.roads + 0.35);
-      const dashGeo = new THREE.BoxGeometry(dashLength, 0.12, dashWidth);
-      const dashMat = new THREE.MeshStandardMaterial({ color: dashColor, roughness: 0.6, metalness: 0.2 });
+      // Dash geometry is oriented along +Z so yaw aligns to centerline via atan2(dx, dz).
+      const dashGeo = new THREE.BoxGeometry(dashWidth, 0.12, dashLength);
+      const dashMat = new THREE.MeshBasicMaterial({
+        color: dashColor,
+        depthTest: true,
+        depthWrite: false
+      });
+      dashMat.polygonOffset = true;
+      dashMat.polygonOffsetFactor = -2;
+      dashMat.polygonOffsetUnits = -2;
       const instances = [];
 
       for (let i = 0; i < points.length - 1; i++) {
@@ -2496,7 +2504,7 @@ function getRoadLineStyle(type) {
         const dz = z2 - z1;
         const length = Math.hypot(dx, dz);
         if (length < 0.001) continue;
-        const angle = Math.atan2(dz, dx);
+        const angle = Math.atan2(dx, dz);
         const steps = Math.floor(length / spacing);
         for (let s = 0; s <= steps; s++) {
           const dist = spacing * 0.5 + s * spacing;
@@ -2517,6 +2525,7 @@ function getRoadLineStyle(type) {
       mesh.instanceMatrix.needsUpdate = true;
       mesh.castShadow = false;
       mesh.receiveShadow = false;
+      mesh.renderOrder = 10;
       return mesh;
     }
 
