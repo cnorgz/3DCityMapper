@@ -600,7 +600,7 @@
       <select id="editorTransitType">
         <option value="ROAD_MAJOR">ROAD MAJOR</option>
         <option value="ROAD_MINOR">ROAD MINOR</option>
-        <option value="FOOTPATH">FOOTPATH</option>
+        <option value="PATH">PATH</option>
         <option value="METRO">METRO</option>
         <option value="TRAIN">TRAIN</option>
         <option value="HYPERLOOP">HYPERLOOP</option>
@@ -1070,12 +1070,22 @@ const USE_RIBBON_ROADS = true;
 
 function normalizeLineType(type) {
   const raw = String(type || '').trim().toUpperCase();
+  if (raw === 'FOOTPATH') return 'PATH';
   if (LINE_TYPES.has(raw)) return raw;
   return 'ROAD_MINOR';
 }
 
+function getLineKind(entry) {
+  if (!entry) return 'ROAD_MINOR';
+  return normalizeLineType(entry.kind ?? entry.type);
+}
+
+function isTransitKind(kind) {
+  return TRANSIT_TYPES.has(normalizeLineType(kind));
+}
+
 function isTransitLine(type) {
-  return TRANSIT_TYPES.has(normalizeLineType(type));
+  return isTransitKind(type);
 }
 
 function getRoadLineStyle(type) {
@@ -1336,10 +1346,33 @@ function getRoadLineStyle(type) {
       });
       normalized.transit.forEach((entry) => {
         if (entry && entry.type) entry.type = String(entry.type).toUpperCase();
+        if (entry && entry.kind) entry.kind = normalizeLineType(entry.kind);
       });
       normalized.roads.forEach((entry) => {
+        if (entry && entry.kind) entry.kind = normalizeLineType(entry.kind);
         if (entry && entry.type) entry.type = normalizeLineType(entry.type);
       });
+
+      // Merge legacy transit lines into roads so all line features live in one place.
+      if (normalized.transit.length > 0) {
+        normalized.transit.forEach((entry) => {
+          if (!entry?.polyline) return;
+          normalized.roads.push({
+            ...entry,
+            kind: normalizeLineType(entry.kind ?? entry.type ?? 'METRO')
+          });
+        });
+        normalized.transit = [];
+      }
+
+      normalized.roads.forEach((entry) => {
+        if (!entry) return;
+        if (entry.polyline) {
+          entry.kind = normalizeLineType(entry.kind ?? entry.type ?? 'ROAD_MINOR');
+          entry.type = entry.kind;
+        }
+      });
+
       return normalized;
     }
 
@@ -1362,6 +1395,8 @@ function getRoadLineStyle(type) {
       });
       if (data.transit !== undefined && !Array.isArray(data.transit)) {
         errors.push('transit must be an array when provided.');
+      } else if (Array.isArray(data.transit) && data.transit.length > 0) {
+        warnings.push('transit is legacy; line features should live in roads[].');
       }
 
       const isFinitePoint = (pt) => Array.isArray(pt) && pt.length >= 2 &&
@@ -1450,7 +1485,7 @@ function getRoadLineStyle(type) {
       });
 
       (data.transit || []).forEach((entry, idx) => {
-        if (!entry?.type || typeof entry.type !== 'string') {
+        if (!entry?.type && !entry?.kind) {
           errors.push(`transit[${idx}] type is required.`);
         }
         const line = entry?.polyline;
@@ -1462,9 +1497,9 @@ function getRoadLineStyle(type) {
             errors.push(`transit[${idx}] stations must be an array of points.`);
           }
         }
-        const type = String(entry?.type || '').toUpperCase();
-        if (type && !['METRO', 'TRAIN', 'HYPERLOOP'].includes(type)) {
-          warnings.push(`transit[${idx}] type "${entry.type}" is unknown.`);
+        const kind = normalizeLineType(entry?.kind ?? entry?.type);
+        if (kind && !TRANSIT_TYPES.has(kind)) {
+          warnings.push(`transit[${idx}] type "${entry.type ?? entry.kind}" is unknown.`);
         }
       });
 
@@ -1490,11 +1525,15 @@ function getRoadLineStyle(type) {
           if (entry.type && typeof entry.type !== 'string') {
             errors.push(`roads[${idx}] type must be a string when provided.`);
           }
+          if (entry.kind && typeof entry.kind !== 'string') {
+            errors.push(`roads[${idx}] kind must be a string when provided.`);
+          }
           if (entry.width !== undefined && !Number.isFinite(entry.width)) {
             errors.push(`roads[${idx}] width must be a number when provided.`);
           }
-          if (entry.type && !LINE_TYPES.has(String(entry.type).toUpperCase())) {
-            warnings.push(`roads[${idx}] type "${entry.type}" is unknown.`);
+          const kind = normalizeLineType(entry.kind ?? entry.type);
+          if (kind && !LINE_TYPES.has(kind)) {
+            warnings.push(`roads[${idx}] kind "${entry.kind ?? entry.type}" is unknown.`);
           }
         } else {
           errors.push(`roads[${idx}] must define polygon or polyline.`);
@@ -1685,31 +1724,26 @@ function getRoadLineStyle(type) {
           if (mesh) blueprintMeshGroup.add(mesh);
           const outline = makeOutline(points, 0xffffff, Y.overlay + 0.055);
           if (outline) blueprintOutlineGroup.add(outline);
-        } else if (entry.polyline) {
-          const pts = entry.polyline.map(p => new THREE.Vector3(p[0], Y.overlay + 0.055, p[1]));
-          const geometry = new THREE.BufferGeometry().setFromPoints(pts);
-          const style = getRoadLineStyle(entry.type);
-          const mat = new THREE.LineBasicMaterial({ color: style.outline, transparent: true, opacity: lineOpacity });
-          mat.depthTest = false;
-          const line = new THREE.Line(geometry, mat);
-          line.renderOrder = 999;
-          blueprintOutlineGroup.add(line);
+          return;
         }
-      });
-
-      (data.transit || []).forEach(entry => {
         if (!entry.polyline || entry.polyline.length < 2) return;
-        const type = String(entry.type || '').toUpperCase();
-        const style = TRANSIT_STYLES[type] || TRANSIT_STYLES.METRO;
-        const pts = entry.polyline.map(p => new THREE.Vector3(p[0], Y.overlay + 0.058, p[1]));
+        const kind = getLineKind(entry);
+        const pts = entry.polyline.map(p => new THREE.Vector3(p[0], Y.overlay + 0.055, p[1]));
         const geometry = new THREE.BufferGeometry().setFromPoints(pts);
-        const mat = new THREE.LineBasicMaterial({ color: style.color });
+        let mat = null;
+        if (isTransitKind(kind)) {
+          const style = TRANSIT_STYLES[kind] || TRANSIT_STYLES.METRO;
+          mat = new THREE.LineBasicMaterial({ color: style.color });
+        } else {
+          const style = getRoadLineStyle(kind);
+          mat = new THREE.LineBasicMaterial({ color: style.outline, transparent: true, opacity: lineOpacity });
+        }
         mat.depthTest = false;
         const line = new THREE.Line(geometry, mat);
         line.renderOrder = 999;
         blueprintOutlineGroup.add(line);
 
-        if (type === 'METRO') {
+        if (kind === 'METRO') {
           const stations = Array.isArray(entry.stations)
             ? entry.stations
             : (data.pois || [])
@@ -1718,7 +1752,7 @@ function getRoadLineStyle(type) {
           const stationGeo = new THREE.SphereGeometry(3, 10, 10);
           stations.forEach((pos) => {
             if (!pos || pos.length < 2) return;
-            const station = new THREE.Mesh(stationGeo, new THREE.MeshBasicMaterial({ color: style.color }));
+            const station = new THREE.Mesh(stationGeo, new THREE.MeshBasicMaterial({ color: TRANSIT_STYLES.METRO.color }));
             station.position.set(pos[0], Y.overlay + 0.06, pos[1]);
             blueprintOutlineGroup.add(station);
           });
@@ -1877,43 +1911,42 @@ function getRoadLineStyle(type) {
           const mesh = createPolygonWorld(points, COLORS.road, Y.roads, roadMat);
           if (mesh) BLUEPRINT_LAYERS.roads.add(mesh);
         } else if (entry.polyline) {
-          const style = getRoadLineStyle(entry.type);
-          const width = Number.isFinite(entry.width) ? entry.width : style.width;
+          const kind = getLineKind(entry);
           const roadPoints = toWorldPolyline(entry.polyline, 1);
+          if (isTransitKind(kind)) {
+            const style = TRANSIT_STYLES[kind] || TRANSIT_STYLES.METRO;
+            const tube = createTransitTube(roadPoints, style.radius, style.color);
+            if (tube) BLUEPRINT_LAYERS.roads.add(tube);
+
+            if (kind === 'HYPERLOOP') {
+              const chain = createHyperloopChain(roadPoints, style.color);
+              BLUEPRINT_LAYERS.props.add(chain);
+            }
+
+            if (kind === 'METRO') {
+              const stations = Array.isArray(entry.stations)
+                ? entry.stations
+                : (data.pois || [])
+                  .filter(poi => poi.type === 'METRO_STATION')
+                  .map(poi => poi.position);
+              stations.forEach((pos) => {
+                if (!pos || pos.length < 2) return;
+                const marker = createMetroStationMarker();
+                marker.position.set(pos[0], Y.buildings + 4, pos[1]);
+                BLUEPRINT_LAYERS.props.add(marker);
+              });
+            }
+            return;
+          }
+
+          const style = getRoadLineStyle(kind);
+          const width = Number.isFinite(entry.width) ? entry.width : style.width;
           const roadGroup = createRoadSegmentsFromPolyline(roadPoints, width, {
             color: style.color,
             yOffset: style.yOffset ?? 0,
             dashes: style.dash
           });
           BLUEPRINT_LAYERS.roads.add(roadGroup);
-        }
-      });
-
-      (data.transit || []).forEach(entry => {
-        if (!entry.polyline || entry.polyline.length < 2) return;
-        const type = String(entry.type || '').toUpperCase();
-        const style = TRANSIT_STYLES[type] || TRANSIT_STYLES.METRO;
-        const transitPoints = toWorldPolyline(entry.polyline, 1);
-        const tube = createTransitTube(transitPoints, style.radius, style.color);
-        if (tube) BLUEPRINT_LAYERS.roads.add(tube);
-
-        if (type === 'HYPERLOOP') {
-          const chain = createHyperloopChain(transitPoints, style.color);
-          BLUEPRINT_LAYERS.props.add(chain);
-        }
-
-        if (type === 'METRO') {
-          const stations = Array.isArray(entry.stations)
-            ? entry.stations
-            : (data.pois || [])
-              .filter(poi => poi.type === 'METRO_STATION')
-              .map(poi => poi.position);
-          stations.forEach((pos) => {
-            if (!pos || pos.length < 2) return;
-            const marker = createMetroStationMarker();
-            marker.position.set(pos[0], Y.buildings + 4, pos[1]);
-            BLUEPRINT_LAYERS.props.add(marker);
-          });
         }
       });
 
@@ -2014,6 +2047,7 @@ function getRoadLineStyle(type) {
         centerlineMat.depthTest = false;
         (data.roads || []).forEach(entry => {
           if (!entry.polyline || entry.polyline.length < 2) return;
+          if (isTransitKind(getLineKind(entry))) return;
           const pts = entry.polyline.map(p => new THREE.Vector3(p[0], Y.overlay + 0.06, p[1]));
           const geometry = new THREE.BufferGeometry().setFromPoints(pts);
           const line = new THREE.Line(geometry, centerlineMat.clone());
@@ -5879,9 +5913,16 @@ function getRoadLineStyle(type) {
       setLinePositions(editorSelectionGlowLine, linePoints, isClosed);
 
       if (selection.layer === 'roads') {
-        const style = getRoadLineStyle(entry.type);
-        editorSelectionLine.material.color.setHex(style.outline);
-        setEditorLineHeights(getRoadSurfaceY(entry.type), { selection: true });
+        const kind = getLineKind(entry);
+        if (entry.polyline && isTransitKind(kind)) {
+          const style = TRANSIT_STYLES[kind] || TRANSIT_STYLES.METRO;
+          editorSelectionLine.material.color.setHex(style.color);
+          setEditorLineHeights(getEditorLineYForPolyline(kind), { selection: true });
+        } else {
+          const style = getRoadLineStyle(kind);
+          editorSelectionLine.material.color.setHex(style.outline);
+          setEditorLineHeights(getRoadSurfaceY(kind), { selection: true });
+        }
       } else if (selection.layer === 'coastlines') {
         editorSelectionLine.material.color.setHex(0x00f0ff);
         setEditorLineHeights(Y.overlay + 0.08, { selection: true });
@@ -6315,36 +6356,30 @@ function getRoadLineStyle(type) {
       pushEditorHistory(snapshotEditorState());
       const polyline = editorState.draft.map(p => [p[0], p[1]]);
       const lineType = normalizeLineType(editorState.transitType);
-      if (isTransitLine(lineType)) {
-        const id = `transit-${Date.now()}`;
-        blueprintData.transit.push({ id, type: lineType, polyline, curves: [] });
-      } else {
-        const style = getRoadLineStyle(lineType);
-        const id = `road-${Date.now()}`;
-        blueprintData.roads.push({
-          id,
-          type: lineType,
-          polyline,
-          width: style.width,
-          curves: []
-        });
-      }
+      const id = `line-${Date.now()}`;
+      const style = getRoadLineStyle(lineType);
+      const width = style?.width ?? (TRANSIT_STYLES[lineType]?.radius ? TRANSIT_STYLES[lineType].radius * 2 : 8);
+      blueprintData.roads.push({
+        id,
+        kind: lineType,
+        type: lineType,
+        polyline,
+        width,
+        curves: []
+      });
+      blueprintData.transit = [];
       editorState.draft = [];
       editorState.previewPoint = null;
-      if (isTransitLine(lineType)) {
-        editorState.selected = { layer: 'transit', index: (blueprintData.transit.length - 1), vertexIndex: null };
-      } else {
-        editorState.selected = { layer: 'roads', index: (blueprintData.roads.length - 1), vertexIndex: null };
-      }
+      editorState.selected = { layer: 'roads', index: (blueprintData.roads.length - 1), vertexIndex: null };
       buildBlueprintFromData(blueprintData);
       rebuildBlueprintCity();
       updateDraftLine();
       updateDraftMarkers();
       updateSelectionMarkers();
-      if (isTransitLine(lineType)) {
+      if (isTransitKind(lineType)) {
         updateEditorStatus('Transit line added.');
-      } else if (lineType === 'FOOTPATH') {
-        updateEditorStatus('Footpath line added.');
+      } else if (lineType === 'PATH') {
+        updateEditorStatus('Path line added.');
       } else {
         updateEditorStatus('Road line added.');
       }
