@@ -2414,8 +2414,9 @@ function getRoadLineStyle(type) {
         const b = i * 2 + 1;
         const c = i * 2 + 2;
         const d = i * 2 + 3;
-        indices.push(a, b, c);
-        indices.push(b, d, c);
+        // Flip winding so front face points +Y (top-down view).
+        indices.push(a, c, b);
+        indices.push(b, c, d);
       }
 
       const geometry = new THREE.BufferGeometry();
