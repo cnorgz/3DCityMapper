@@ -2326,6 +2326,10 @@ function getRoadLineStyle(type) {
       if (!points || points.length < 2) return null;
       const half = width / 2;
       const miterLimit = options.miterLimit ?? 4;
+      // Phase 6 debug checklist:
+      // - Diagonal road: ribbon preview + final mesh coincide.
+      // - Road centerline toggle sits centered on ribbon.
+      // - Endpoint snap junctions show no visible gaps.
       const positions = [];
       const uvs = [];
       const indices = [];
