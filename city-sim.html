@@ -1904,6 +1904,17 @@ function getRoadLineStyle(type) {
         roughness: 0.9,
         metalness: 0.1
       });
+      const roadMatCache = new Map();
+      const getRoadMaterial = (color) => {
+        if (roadMatCache.has(color)) return roadMatCache.get(color);
+        const mat = new THREE.MeshStandardMaterial({
+          color,
+          roughness: 0.9,
+          metalness: 0.1
+        });
+        roadMatCache.set(color, mat);
+        return mat;
+      };
 
       (data.roads || []).forEach(entry => {
         if (entry.polygon) {
@@ -1941,12 +1952,20 @@ function getRoadLineStyle(type) {
 
           const style = getRoadLineStyle(kind);
           const width = Number.isFinite(entry.width) ? entry.width : style.width;
-          const roadGroup = createRoadSegmentsFromPolyline(roadPoints, width, {
-            color: style.color,
-            yOffset: style.yOffset ?? 0,
-            dashes: style.dash
-          });
-          BLUEPRINT_LAYERS.roads.add(roadGroup);
+          if (USE_RIBBON_ROADS) {
+            const ribbonMat = getRoadMaterial(style.color);
+            const ribbon = createRibbonRoadMesh(roadPoints, width, ribbonMat, Y.roads + (style.yOffset ?? 0), {
+              miterLimit: 4
+            });
+            if (ribbon) BLUEPRINT_LAYERS.roads.add(ribbon);
+          } else {
+            const roadGroup = createRoadSegmentsFromPolyline(roadPoints, width, {
+              color: style.color,
+              yOffset: style.yOffset ?? 0,
+              dashes: style.dash
+            });
+            BLUEPRINT_LAYERS.roads.add(roadGroup);
+          }
         }
       });
 
@@ -2264,6 +2283,107 @@ function getRoadLineStyle(type) {
       if (!points || points.length === 0) return [];
       if (zSign === 1) return points;
       return points.map(([x, z]) => [x, z * zSign]);
+    }
+
+    function buildRibbonGeometryFromPolyline(points, width, y = 0, options = {}) {
+      if (!points || points.length < 2) return null;
+      const half = width / 2;
+      const miterLimit = options.miterLimit ?? 4;
+      const positions = [];
+      const uvs = [];
+      const indices = [];
+      const count = points.length;
+      const segNormals = [];
+      const segLengths = [];
+      let totalLength = 0;
+
+      for (let i = 0; i < count - 1; i++) {
+        const [x1, z1] = points[i];
+        const [x2, z2] = points[i + 1];
+        const dx = x2 - x1;
+        const dz = z2 - z1;
+        const len = Math.hypot(dx, dz) || 1;
+        segLengths.push(len);
+        totalLength += len;
+        const nx = -(dz / len);
+        const nz = dx / len;
+        segNormals.push([nx, nz]);
+      }
+
+      const leftRight = [];
+      for (let i = 0; i < count; i++) {
+        const [x, z] = points[i];
+        let nx = 0;
+        let nz = 0;
+        if (i === 0) {
+          [nx, nz] = segNormals[0];
+        } else if (i === count - 1) {
+          [nx, nz] = segNormals[count - 2];
+        } else {
+          const [n0x, n0z] = segNormals[i - 1];
+          const [n1x, n1z] = segNormals[i];
+          const mx = n0x + n1x;
+          const mz = n0z + n1z;
+          const mLen = Math.hypot(mx, mz);
+          if (mLen > 0.0001) {
+            const mtx = mx / mLen;
+            const mtz = mz / mLen;
+            const denom = (mtx * n1x + mtz * n1z) || 0.0001;
+            const miterLen = half / denom;
+            if (Math.abs(miterLen) <= miterLimit * half) {
+              nx = mtx;
+              nz = mtz;
+              leftRight.push([
+                [x + nx * miterLen, z + nz * miterLen],
+                [x - nx * miterLen, z - nz * miterLen]
+              ]);
+              continue;
+            }
+          }
+          nx = n1x;
+          nz = n1z;
+        }
+        leftRight.push([
+          [x + nx * half, z + nz * half],
+          [x - nx * half, z - nz * half]
+        ]);
+      }
+
+      let acc = 0;
+      for (let i = 0; i < count; i++) {
+        const u = totalLength > 0 ? acc / totalLength : 0;
+        const [left, right] = leftRight[i];
+        positions.push(left[0], y, left[1]);
+        positions.push(right[0], y, right[1]);
+        uvs.push(u, 0);
+        uvs.push(u, 1);
+        if (i < count - 1) acc += segLengths[i];
+      }
+
+      for (let i = 0; i < count - 1; i++) {
+        const a = i * 2;
+        const b = i * 2 + 1;
+        const c = i * 2 + 2;
+        const d = i * 2 + 3;
+        indices.push(a, b, c);
+        indices.push(b, d, c);
+      }
+
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+      geometry.setIndex(indices);
+      geometry.computeVertexNormals();
+      return geometry;
+    }
+
+    function createRibbonRoadMesh(points, width, material, y, options = {}) {
+      const geometry = buildRibbonGeometryFromPolyline(points, width, y, options);
+      if (!geometry) return null;
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.receiveShadow = true;
+      mesh.castShadow = false;
+      return mesh;
     }
 
     function createRoadSegmentsFromPolyline(points, width = 12, options = {}) {
