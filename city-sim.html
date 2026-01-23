@@ -506,6 +506,10 @@
       <input type="checkbox" id="debugBlueprintOutlines" />
       <span>Blueprint Outlines</span>
     </label>
+    <label class="toggle-row">
+      <input type="checkbox" id="debugRoadCenterlines" />
+      <span>Road Centerline</span>
+    </label>
     <hr style="border: none; border-top: 1px solid rgba(100, 200, 255, 0.2); margin: 10px 0;" />
     <h4 style="color: #64c8ff; font-size: 12px; margin: 8px 0 4px 0;">Blueprint</h4>
     <div class="control-row">
@@ -905,6 +909,7 @@ let gridHelper = null;
 let blueprintData = null;
 let blueprintOutlineGroup = null;
 let blueprintMeshGroup = null;
+let blueprintCenterlineGroup = null;
 let editorGroup = null;
 let editorDraftLine = null;
 let editorDraftGlowLine = null;
@@ -916,7 +921,8 @@ let editorLineEndpointGroup = null;
 const debugSettings = {
   showGrid: false,
   showOverlayBounds: false,
-  showBlueprintOutlines: false
+  showBlueprintOutlines: false,
+  showRoadCenterlines: false
 };
 
 const editorState = {
@@ -1048,6 +1054,7 @@ const POI_COLORS = {
 const ROAD_LINE_STYLES = {
   ROAD_MAJOR: { width: 18, color: 0x2b2b2b, outline: 0xffffff, dash: true, yOffset: 0 },
   ROAD_MINOR: { width: 12, color: 0x333333, outline: 0xffffff, dash: true, yOffset: 0 },
+  PATH: { width: 4, color: 0x777777, outline: 0xcccccc, dash: false, yOffset: 0.08 },
   FOOTPATH: { width: 4, color: 0x777777, outline: 0xcccccc, dash: false, yOffset: 0.08 }
 };
 
@@ -1057,8 +1064,9 @@ const TRANSIT_STYLES = {
   HYPERLOOP: { color: 0x00ffd5, radius: 1.8 }
 };
 
-const LINE_TYPES = new Set(['ROAD_MAJOR', 'ROAD_MINOR', 'FOOTPATH', 'METRO', 'TRAIN', 'HYPERLOOP']);
+const LINE_TYPES = new Set(['ROAD_MAJOR', 'ROAD_MINOR', 'PATH', 'FOOTPATH', 'METRO', 'TRAIN', 'HYPERLOOP']);
 const TRANSIT_TYPES = new Set(['METRO', 'TRAIN', 'HYPERLOOP']);
+const USE_RIBBON_ROADS = true;
 
 function normalizeLineType(type) {
   const raw = String(type || '').trim().toUpperCase();
@@ -1215,6 +1223,9 @@ function getRoadLineStyle(type) {
       if (blueprintLabelGroup) {
         blueprintLabelGroup.visible = allowed && blueprintPreviewSettings.showLabels;
       }
+      if (blueprintCenterlineGroup) {
+        blueprintCenterlineGroup.visible = allowed && debugSettings.showRoadCenterlines;
+      }
     }
 
     function syncBlueprintRootToOverlay() {
@@ -1294,6 +1305,10 @@ function getRoadLineStyle(type) {
       blueprintLabelGroup = new THREE.Group();
       blueprintLabelGroup.name = 'BlueprintLabels';
       mapOverlayGroup.add(blueprintLabelGroup);
+
+      blueprintCenterlineGroup = new THREE.Group();
+      blueprintCenterlineGroup.name = 'RoadCenterlines';
+      mapOverlayGroup.add(blueprintCenterlineGroup);
     }
 
     function normalizeBlueprintData(data) {
@@ -1577,6 +1592,7 @@ function getRoadLineStyle(type) {
       resetGroup(blueprintOutlineGroup);
       resetGroup(blueprintMeshGroup);
       if (blueprintLabelGroup) resetGroup(blueprintLabelGroup);
+      if (blueprintCenterlineGroup) resetGroup(blueprintCenterlineGroup);
 
       const lineOpacity = blueprintPreviewSettings.opacity;
       const baseOutlineMat = new THREE.LineBasicMaterial({ color: 0x00f0ff, transparent: true, opacity: lineOpacity });
@@ -1988,6 +2004,23 @@ function getRoadLineStyle(type) {
           BLUEPRINT_LAYERS.props.add(tree);
         }
       });
+
+      if (blueprintCenterlineGroup) {
+        const centerlineMat = new THREE.LineBasicMaterial({
+          color: 0xffffff,
+          transparent: true,
+          opacity: 0.55 * blueprintPreviewSettings.opacity
+        });
+        centerlineMat.depthTest = false;
+        (data.roads || []).forEach(entry => {
+          if (!entry.polyline || entry.polyline.length < 2) return;
+          const pts = entry.polyline.map(p => new THREE.Vector3(p[0], Y.overlay + 0.06, p[1]));
+          const geometry = new THREE.BufferGeometry().setFromPoints(pts);
+          const line = new THREE.Line(geometry, centerlineMat.clone());
+          line.renderOrder = 999;
+          blueprintCenterlineGroup.add(line);
+        });
+      }
     }
 
     function rebuildBlueprintCity() {
@@ -5322,6 +5355,7 @@ function getRoadLineStyle(type) {
       const gridToggle = document.getElementById('debugGrid');
       const boundsToggle = document.getElementById('debugOverlayBounds');
       const blueprintToggle = document.getElementById('debugBlueprintOutlines');
+      const roadCenterToggle = document.getElementById('debugRoadCenterlines');
 
       const bindToggle = (toggle, key) => {
         if (!toggle) return;
@@ -5335,6 +5369,7 @@ function getRoadLineStyle(type) {
       bindToggle(gridToggle, 'showGrid');
       bindToggle(boundsToggle, 'showOverlayBounds');
       bindToggle(blueprintToggle, 'showBlueprintOutlines');
+      bindToggle(roadCenterToggle, 'showRoadCenterlines');
     }
 
     function setupBlueprintControls() {
