@@ -2611,13 +2611,22 @@ function getRoadLineStyle(type) {
       return out;
     }
 
-    function smoothPolyline(points, segments = 6) {
+    function smoothPolyline(points, iterations = 1, alpha = 0.25) {
       if (!points || points.length < 3) return points;
-      const curvePoints = points.map(p => new THREE.Vector3(p[0], 0, p[1]));
-      const curve = new THREE.CatmullRomCurve3(curvePoints, false, 'catmullrom', 0.2);
-      const count = Math.max(points.length * segments, 2);
-      const sampled = curve.getSpacedPoints(count);
-      return sampled.map(p => [p.x, p.z]);
+      let current = points.map(p => [p[0], p[1]]);
+      for (let iter = 0; iter < iterations; iter++) {
+        const next = [current[0]];
+        for (let i = 0; i < current.length - 1; i++) {
+          const p0 = current[i];
+          const p1 = current[i + 1];
+          const q = [p0[0] + (p1[0] - p0[0]) * alpha, p0[1] + (p1[1] - p0[1]) * alpha];
+          const r = [p0[0] + (p1[0] - p0[0]) * (1 - alpha), p0[1] + (p1[1] - p0[1]) * (1 - alpha)];
+          next.push(q, r);
+        }
+        next.push(current[current.length - 1]);
+        current = next;
+      }
+      return current;
     }
 
     function buildPathData(points) {
@@ -2687,10 +2696,10 @@ function getRoadLineStyle(type) {
         const style = getRoadLineStyle(kind);
         const width = Number.isFinite(entry.width) ? entry.width : style.width;
         const laneOffset = Math.max(2.5, width * TRAFFIC_SETTINGS.laneOffsetFactor);
-        const left = buildOffsetPolyline(entry.polyline, laneOffset);
-        const right = buildOffsetPolyline(entry.polyline, -laneOffset);
-        const leftSmooth = smoothPolyline(left, TRAFFIC_SETTINGS.smoothSegments);
-        const rightSmooth = smoothPolyline(right, TRAFFIC_SETTINGS.smoothSegments);
+        const left = buildOffsetPolyline(entry.polyline, laneOffset, 2);
+        const right = buildOffsetPolyline(entry.polyline, -laneOffset, 2);
+        const leftSmooth = smoothPolyline(left, 1, 0.25);
+        const rightSmooth = smoothPolyline(right, 1, 0.25);
         const leftPath = buildPathData(leftSmooth);
         const rightPath = buildPathData(rightSmooth);
         if (leftPath) {
@@ -6050,6 +6059,15 @@ function getRoadLineStyle(type) {
       line.material.resolution.set(window.innerWidth, window.innerHeight);
     }
 
+    function hideEditorLines() {
+      if (editorDraftLine) editorDraftLine.visible = false;
+      if (editorDraftGlowLine) editorDraftGlowLine.visible = false;
+      if (editorSelectionLine) editorSelectionLine.visible = false;
+      if (editorSelectionGlowLine) editorSelectionGlowLine.visible = false;
+      if (editorDraftRibbon) editorDraftRibbon.visible = false;
+      if (editorSelectionRibbon) editorSelectionRibbon.visible = false;
+    }
+
     function setLinePositions(line, points, closed = false) {
       if (!line) return;
       if (!points || points.length < 2) {
@@ -7054,6 +7072,7 @@ function getRoadLineStyle(type) {
           pushEditorHistory(snapshotEditorState());
           blueprintData = normalizeBlueprintData({});
           editorState.draft = [];
+          editorState.previewPoint = null;
           editorState.selected = null;
           editorState.hover = null;
           editorState.hoverDraftIndex = null;
@@ -7062,6 +7081,7 @@ function getRoadLineStyle(type) {
           updateDraftLine();
           updateDraftMarkers();
           updateSelectionMarkers();
+          hideEditorLines();
           updateEditorStatus('Cleared all blueprint shapes.');
           setBlueprintStatus('Blueprint status: cleared in memory.');
         });
