@@ -820,7 +820,13 @@ const blueprintTraffic = {
   paths: []
 };
 blueprintTraffic.group.name = 'BlueprintTraffic';
-BLUEPRINT_LAYERS.props.add(blueprintTraffic.group);
+
+function ensureBlueprintTrafficGroup() {
+  if (!BLUEPRINT_LAYERS.props.children.includes(blueprintTraffic.group)) {
+    BLUEPRINT_LAYERS.props.add(blueprintTraffic.group);
+  }
+}
+ensureBlueprintTrafficGroup();
 
 // ============================================
 // ZONE REGISTRY
@@ -1868,6 +1874,7 @@ function getRoadLineStyle(type) {
     function clearBlueprintCity() {
       Object.values(BLUEPRINT_LAYERS).forEach(group => resetGroup(group));
       blueprintZoneMeshes = [];
+      ensureBlueprintTrafficGroup();
     }
 
     function buildBlueprintCity(data) {
@@ -2667,6 +2674,7 @@ function getRoadLineStyle(type) {
     }
 
     function rebuildBlueprintTraffic() {
+      ensureBlueprintTrafficGroup();
       clearBlueprintTraffic();
       if (!blueprintCityEnabled || !blueprintData) return;
 
