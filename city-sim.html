@@ -813,6 +813,15 @@ Object.values(BLUEPRINT_LAYERS).forEach(g => {
   blueprintRootGroup.add(g);
 });
 
+// Blueprint traffic (Phase 6.1)
+const blueprintTraffic = {
+  group: new THREE.Group(),
+  cars: [],
+  paths: []
+};
+blueprintTraffic.group.name = 'BlueprintTraffic';
+BLUEPRINT_LAYERS.props.add(blueprintTraffic.group);
+
 // ============================================
 // ZONE REGISTRY
 // ============================================
@@ -2122,9 +2131,11 @@ function getRoadLineStyle(type) {
     }
 
     function rebuildBlueprintCity() {
-      if (!blueprintCityEnabled) return;
       if (!blueprintData) return;
-      buildBlueprintCity(blueprintData);
+      if (blueprintCityEnabled) {
+        buildBlueprintCity(blueprintData);
+      }
+      rebuildBlueprintTraffic();
       setCityLayerVisibility();
     }
 
@@ -2527,6 +2538,209 @@ function getRoadLineStyle(type) {
       mesh.receiveShadow = false;
       mesh.renderOrder = 10;
       return mesh;
+    }
+
+    // ============================================
+    // Phase 6.1 - Blueprint Traffic (prototype)
+    // ============================================
+    const TRAFFIC_SETTINGS = {
+      laneOffsetFactor: 0.25,
+      minRoadLength: 80,
+      maxCars: 24,
+      speedMajor: 45,
+      speedMinor: 30,
+      yOffset: 1.2,
+      smoothSegments: 8
+    };
+
+    function buildOffsetPolyline(points, offset, miterLimit = 4) {
+      if (!points || points.length < 2) return points;
+      const half = Math.abs(offset);
+      const sign = offset >= 0 ? 1 : -1;
+      const count = points.length;
+      const segNormals = [];
+      for (let i = 0; i < count - 1; i++) {
+        const [x1, z1] = points[i];
+        const [x2, z2] = points[i + 1];
+        const dx = x2 - x1;
+        const dz = z2 - z1;
+        const len = Math.hypot(dx, dz) || 1;
+        const nx = -(dz / len);
+        const nz = dx / len;
+        segNormals.push([nx, nz]);
+      }
+      const out = [];
+      for (let i = 0; i < count; i++) {
+        const [x, z] = points[i];
+        let nx = 0;
+        let nz = 0;
+        if (i === 0) {
+          [nx, nz] = segNormals[0];
+        } else if (i === count - 1) {
+          [nx, nz] = segNormals[count - 2];
+        } else {
+          const [n0x, n0z] = segNormals[i - 1];
+          const [n1x, n1z] = segNormals[i];
+          const mx = n0x + n1x;
+          const mz = n0z + n1z;
+          const mLen = Math.hypot(mx, mz);
+          if (mLen > 0.0001) {
+            const mtx = mx / mLen;
+            const mtz = mz / mLen;
+            const denom = (mtx * n1x + mtz * n1z) || 0.0001;
+            const miterLen = half / denom;
+            if (Math.abs(miterLen) <= miterLimit * half) {
+              nx = mtx;
+              nz = mtz;
+              out.push([x + nx * miterLen * sign, z + nz * miterLen * sign]);
+              continue;
+            }
+          }
+          nx = n1x;
+          nz = n1z;
+        }
+        out.push([x + nx * half * sign, z + nz * half * sign]);
+      }
+      return out;
+    }
+
+    function smoothPolyline(points, segments = 6) {
+      if (!points || points.length < 3) return points;
+      const curvePoints = points.map(p => new THREE.Vector3(p[0], 0, p[1]));
+      const curve = new THREE.CatmullRomCurve3(curvePoints, false, 'catmullrom', 0.2);
+      const count = Math.max(points.length * segments, 2);
+      const sampled = curve.getSpacedPoints(count);
+      return sampled.map(p => [p.x, p.z]);
+    }
+
+    function buildPathData(points) {
+      if (!points || points.length < 2) return null;
+      const lengths = [0];
+      let total = 0;
+      for (let i = 1; i < points.length; i++) {
+        const dx = points[i][0] - points[i - 1][0];
+        const dz = points[i][1] - points[i - 1][1];
+        total += Math.hypot(dx, dz);
+        lengths.push(total);
+      }
+      const dxEnd = points[0][0] - points[points.length - 1][0];
+      const dzEnd = points[0][1] - points[points.length - 1][1];
+      const closed = Math.hypot(dxEnd, dzEnd) < 5;
+      return { points, lengths, total, closed };
+    }
+
+    function samplePathAt(path, distance, direction = 1) {
+      if (!path || !path.points || path.points.length < 2) return null;
+      let dist = distance;
+      if (path.closed && path.total > 0) {
+        dist = ((dist % path.total) + path.total) % path.total;
+      } else {
+        dist = Math.max(0, Math.min(path.total, dist));
+      }
+      let segIndex = 0;
+      while (segIndex < path.lengths.length - 2 && path.lengths[segIndex + 1] < dist) {
+        segIndex += 1;
+      }
+      const segStart = path.lengths[segIndex];
+      const segEnd = path.lengths[segIndex + 1];
+      const segLen = Math.max(0.0001, segEnd - segStart);
+      const t = (dist - segStart) / segLen;
+      const [x1, z1] = path.points[segIndex];
+      const [x2, z2] = path.points[segIndex + 1];
+      let dx = x2 - x1;
+      let dz = z2 - z1;
+      if (direction < 0) {
+        dx = -dx;
+        dz = -dz;
+      }
+      const x = x1 + (x2 - x1) * t;
+      const z = z1 + (z2 - z1) * t;
+      const rotation = Math.atan2(dz, dx);
+      return { x, z, rotation };
+    }
+
+    function clearBlueprintTraffic() {
+      if (!blueprintTraffic.group) return;
+      resetGroup(blueprintTraffic.group);
+      blueprintTraffic.cars = [];
+      blueprintTraffic.paths = [];
+    }
+
+    function rebuildBlueprintTraffic() {
+      clearBlueprintTraffic();
+      if (!blueprintCityEnabled || !blueprintData) return;
+
+      const roads = blueprintData.roads || [];
+      const paths = [];
+      roads.forEach(entry => {
+        if (!entry?.polyline || entry.polyline.length < 2) return;
+        const kind = getLineKind(entry);
+        if (isTransitKind(kind) || kind === 'PATH') return;
+        const style = getRoadLineStyle(kind);
+        const width = Number.isFinite(entry.width) ? entry.width : style.width;
+        const laneOffset = Math.max(2.5, width * TRAFFIC_SETTINGS.laneOffsetFactor);
+        const left = buildOffsetPolyline(entry.polyline, laneOffset);
+        const right = buildOffsetPolyline(entry.polyline, -laneOffset);
+        const leftSmooth = smoothPolyline(left, TRAFFIC_SETTINGS.smoothSegments);
+        const rightSmooth = smoothPolyline(right, TRAFFIC_SETTINGS.smoothSegments);
+        const leftPath = buildPathData(leftSmooth);
+        const rightPath = buildPathData(rightSmooth);
+        if (leftPath) {
+          leftPath.kind = kind;
+          paths.push(leftPath);
+        }
+        if (rightPath) {
+          rightPath.kind = kind;
+          paths.push(rightPath);
+        }
+      });
+
+      blueprintTraffic.paths = paths.filter(p => p && p.total >= TRAFFIC_SETTINGS.minRoadLength);
+      let spawned = 0;
+      blueprintTraffic.paths.forEach(path => {
+        if (spawned >= TRAFFIC_SETTINGS.maxCars) return;
+        const color = COLORS.cars?.[Math.floor(Math.random() * COLORS.cars.length)] ?? 0xff3333;
+        const car = createCar(color);
+        car.userData.blueprintTraffic = true;
+        car.userData.path = path;
+        car.userData.distance = Math.random() * path.total;
+        car.userData.direction = (spawned % 2 === 0) ? 1 : -1;
+        const baseSpeed = path.kind === 'ROAD_MAJOR' ? TRAFFIC_SETTINGS.speedMajor : TRAFFIC_SETTINGS.speedMinor;
+        car.userData.speed = baseSpeed * (0.7 + Math.random() * 0.6);
+        const sample = samplePathAt(path, car.userData.distance, car.userData.direction);
+        if (sample) {
+          car.position.set(sample.x, Y.roads + TRAFFIC_SETTINGS.yOffset, sample.z);
+          car.rotation.y = sample.rotation;
+        }
+        blueprintTraffic.group.add(car);
+        blueprintTraffic.cars.push(car);
+        spawned += 1;
+      });
+    }
+
+    function animateBlueprintTraffic(dt) {
+      if (!blueprintCityEnabled || blueprintTraffic.cars.length === 0) return;
+      blueprintTraffic.cars.forEach(car => {
+        const path = car.userData.path;
+        if (!path || path.total <= 0) return;
+        let dist = car.userData.distance + car.userData.speed * dt * car.userData.direction;
+        if (path.closed) {
+          dist = ((dist % path.total) + path.total) % path.total;
+        } else {
+          if (dist >= path.total) {
+            dist = path.total;
+            car.userData.direction = -1;
+          } else if (dist <= 0) {
+            dist = 0;
+            car.userData.direction = 1;
+          }
+        }
+        car.userData.distance = dist;
+        const sample = samplePathAt(path, dist, car.userData.direction);
+        if (!sample) return;
+        car.position.set(sample.x, Y.roads + TRAFFIC_SETTINGS.yOffset, sample.z);
+        car.rotation.y = sample.rotation;
+      });
     }
 
     function getLaneCenterlines(points, offset = 3) {
@@ -7240,6 +7454,7 @@ function getRoadLineStyle(type) {
         
         // Animate cars
         animateCars();
+        animateBlueprintTraffic(dt);
         
         // Animate windmills (using cached reference)
         if (windmillsGroup) {
