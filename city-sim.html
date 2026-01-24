@@ -2695,10 +2695,12 @@ function getRoadLineStyle(type) {
         const rightPath = buildPathData(rightSmooth);
         if (leftPath) {
           leftPath.kind = kind;
+          leftPath.direction = 1;
           paths.push(leftPath);
         }
         if (rightPath) {
           rightPath.kind = kind;
+          rightPath.direction = -1;
           paths.push(rightPath);
         }
       });
@@ -2712,7 +2714,7 @@ function getRoadLineStyle(type) {
         car.userData.blueprintTraffic = true;
         car.userData.path = path;
         car.userData.distance = Math.random() * path.total;
-        car.userData.direction = (spawned % 2 === 0) ? 1 : -1;
+        car.userData.direction = Number.isFinite(path.direction) ? path.direction : 1;
         const baseSpeed = path.kind === 'ROAD_MAJOR' ? TRAFFIC_SETTINGS.speedMajor : TRAFFIC_SETTINGS.speedMinor;
         car.userData.speed = baseSpeed * (0.7 + Math.random() * 0.6);
         const sample = samplePathAt(path, car.userData.distance, car.userData.direction);
