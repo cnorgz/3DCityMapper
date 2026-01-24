@@ -2662,7 +2662,7 @@ function getRoadLineStyle(type) {
       }
       const x = x1 + (x2 - x1) * t;
       const z = z1 + (z2 - z1) * t;
-      const rotation = Math.atan2(dz, dx);
+      const rotation = Math.atan2(dx, dz) - Math.PI / 2;
       return { x, z, rotation };
     }
 
