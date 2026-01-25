@@ -16,20 +16,20 @@
 - [x] Road dashes instanced + aligned with centerline.
 - [x] Preview uses ribbon (not Line2).
 - [x] Endpoint snapping + junction insert on edge.
-- [ ] Road editing UX polish (junction mode + curve mode flow).
-- [ ] 2‑way traffic prototype on ribbon centerlines (visual demo).
+- [x] Road editing UX polish (junction mode + curve mode flow).
+- [x] 2‑way traffic prototype on ribbon centerlines (visual demo).
 - [ ] Minor‑vs‑major yield rule (simple, non‑blocking).
-- [ ] Traffic light tool for junctions (simple timed toggle).
+- [x] Traffic light tool for junctions (simple timed toggle).
 - [ ] Editor junction interactions feel stable for hand‑drawn maps.
 
 ## ⏭ Phase 6.1+ Additions (current focus)
-- [ ] Road traffic demo (two‑way on offset centerlines, no lanes UI).
+- [x] Road traffic demo (two‑way on offset centerlines, no lanes UI).
 - [ ] Dead‑end handling (U‑turn / respawn).
-- [ ] Smooth pathing on bends (simple spline).
-- [ ] Junction selection + orange “junction mode” (double‑click).
-- [ ] Curve editing for roads in select mode (curve handles only).
-- [ ] Tool UX: draw → junction → draw without mode switching.
-- [ ] Traffic light placement on junction points (optional, simple cycle).
+- [ ] Smooth pathing on bends (simple spline) — deferred.
+- [x] Junction selection + orange “junction mode” (double‑click).
+- [x] Curve editing for roads in select mode (curve handles only).
+- [x] Tool UX: draw → junction → draw without mode switching.
+- [x] Traffic light placement on junction points (simple cycle).
 
 ## ⏳ Future Phases (paused)
 - [ ] Phase 7: Land/sea pipeline.
@@ -37,9 +37,11 @@
 - [ ] Phase 9: README + final import/export polish.
 
 ## 🔧 New UI Tools (requested)
-- [ ] Map zoom slider for fine tracing (fidelity view only).
-- [ ] Point size slider for editor handles.
+- [x] Map zoom slider for fine tracing (fidelity view only).
+- [x] Point size slider for editor handles.
+- [x] Map pan (mouse drag; two‑finger touch) when zoomed.
 
 ## Notes / Constraints
 - Legacy car animation exists only for legacy roads; Phase 6 traffic will use blueprint roads.
 - No one‑way lanes for now (keep 2‑way simple).
+- Corner radius refinement for road turns is deferred (needs research).
