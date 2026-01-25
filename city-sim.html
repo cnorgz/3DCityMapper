@@ -2421,6 +2421,15 @@ function getRoadLineStyle(type) {
         const nz = dx / len;
         segNormals.push([nx, nz]);
       }
+      for (let i = 1; i < segNormals.length; i++) {
+        const prev = segNormals[i - 1];
+        const curr = segNormals[i];
+        const dot = prev[0] * curr[0] + prev[1] * curr[1];
+        if (dot < 0) {
+          curr[0] *= -1;
+          curr[1] *= -1;
+        }
+      }
 
       const leftRight = [];
       for (let i = 0; i < count; i++) {
@@ -7358,8 +7367,10 @@ function getRoadLineStyle(type) {
         }
 
         if (mode === 'draw-polyline') {
-          const endpointHit = findNearestLineEndpoint(mapPoint, getEditorHitRadius(16));
-          const edgeHit = findNearestLineEdge(mapPoint, getEditorHitRadius(12));
+          const baseEndpointRadius = doubleClick ? 22 : 16;
+          const baseEdgeRadius = doubleClick ? 24 : 12;
+          const endpointHit = findNearestLineEndpoint(mapPoint, getEditorHitRadius(baseEndpointRadius));
+          const edgeHit = findNearestLineEdge(mapPoint, getEditorHitRadius(baseEdgeRadius));
           const edgeEntry = edgeHit ? blueprintData?.[edgeHit.layer]?.[edgeHit.index] : null;
           const edgeBlocked = edgeEntry ? isCurveSegment(edgeEntry, edgeHit.segmentIndex) : false;
           const usableEdgeHit = edgeHit && edgeEntry?.polyline && !edgeBlocked;
