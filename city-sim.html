@@ -2450,17 +2450,13 @@ function getRoadLineStyle(type) {
           if (mLen > 0.0001 && dot > 0.2) {
             const mtx = mx / mLen;
             const mtz = mz / mLen;
-            const denom = (mtx * n1x + mtz * n1z) || 0.0001;
-            const miterLen = half / denom;
-            if (Math.abs(miterLen) <= miterLimit * half) {
-              nx = mtx;
-              nz = mtz;
-              leftRight.push([
-                [x + nx * miterLen, z + nz * miterLen],
-                [x - nx * miterLen, z - nz * miterLen]
-              ]);
-              continue;
-            }
+            nx = mtx;
+            nz = mtz;
+            leftRight.push([
+              [x + nx * half, z + nz * half],
+              [x - nx * half, z - nz * half]
+            ]);
+            continue;
           }
           nx = n1x;
           nz = n1z;
@@ -7374,6 +7370,37 @@ function getRoadLineStyle(type) {
           const edgeEntry = edgeHit ? blueprintData?.[edgeHit.layer]?.[edgeHit.index] : null;
           const edgeBlocked = edgeEntry ? isCurveSegment(edgeEntry, edgeHit.segmentIndex) : false;
           const usableEdgeHit = edgeHit && edgeEntry?.polyline && !edgeBlocked;
+
+          if (doubleClick && (endpointHit || usableEdgeHit) && editorState.draft.length <= 1) {
+            editorState.draft = [];
+            if (usableEdgeHit) {
+              pushEditorHistory(snapshotEditorState());
+              if (Array.isArray(edgeEntry.curves)) {
+                edgeEntry.curves = edgeEntry.curves.map(c => (c >= edgeHit.segmentIndex ? c + 1 : c));
+              }
+              edgeEntry.polyline.splice(edgeHit.segmentIndex, 0, [edgeHit.point.x, edgeHit.point.z]);
+              editorState.selected = { layer: edgeHit.layer, index: edgeHit.index, vertexIndex: edgeHit.segmentIndex };
+              editorState.draft = [[edgeHit.point.x, edgeHit.point.z]];
+              editorState.junctionMode = true;
+              editorState.junctionBase = [edgeHit.point.x, edgeHit.point.z];
+              buildBlueprintFromData(blueprintData);
+              rebuildBlueprintCity();
+              updateDraftLine();
+              updateDraftMarkers();
+              updateSelectionMarkers();
+              updateEditorStatus('Junction mode: continue drawing.');
+              return;
+            }
+            if (endpointHit) {
+              editorState.draft.push([endpointHit.point[0], endpointHit.point[1]]);
+              editorState.junctionMode = true;
+              editorState.junctionBase = [endpointHit.point[0], endpointHit.point[1]];
+              updateDraftLine();
+              updateDraftMarkers();
+              updateEditorStatus(`Draft points: ${editorState.draft.length}`);
+              return;
+            }
+          }
 
           if (editorState.draft.length === 0) {
             if (doubleClick && (endpointHit || usableEdgeHit)) {
