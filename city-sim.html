@@ -632,6 +632,16 @@
       <input type="number" id="editorPixelStep" min="1" step="1" value="10" />
       <span></span>
     </div>
+    <div class="control-row">
+      <label for="editorZoom">Map Zoom</label>
+      <input type="range" id="editorZoom" min="0.5" max="3" step="0.05" value="1" />
+      <input type="number" id="editorZoomValue" min="0.5" max="3" step="0.05" value="1" />
+    </div>
+    <div class="control-row">
+      <label for="editorHandleScale">Point Size</label>
+      <input type="range" id="editorHandleScale" min="0.4" max="2.5" step="0.05" value="1" />
+      <input type="number" id="editorHandleScaleValue" min="0.4" max="2.5" step="0.05" value="1" />
+    </div>
     <div class="overlay-actions">
       <button class="btn" id="editorDelete" style="flex: 1; padding: 6px;">Delete</button>
       <button class="btn" id="editorClear" style="flex: 1; padding: 6px;">Clear All</button>
@@ -959,7 +969,9 @@ const editorState = {
   hoverDraftIndex: null,
   hoverLineEndpoint: null,
   lastPointerDown: null,
-  hideCity: false
+  hideCity: false,
+  mapZoom: 1,
+  handleScale: 1
 };
 
 const editorHistory = {
@@ -6059,6 +6071,21 @@ function getRoadLineStyle(type) {
       line.material.resolution.set(window.innerWidth, window.innerHeight);
     }
 
+    function applyEditorZoom(value) {
+      const zoom = clampNumber(Number.parseFloat(value), 0.5, 3);
+      editorState.mapZoom = zoom;
+      orthoCamera.zoom = zoom;
+      orthoCamera.updateProjectionMatrix();
+    }
+
+    function applyHandleScale(value) {
+      const scale = clampNumber(Number.parseFloat(value), 0.4, 2.5);
+      editorState.handleScale = scale;
+      updateDraftMarkers();
+      updateSelectionMarkers();
+      updateLineEndpointMarkers();
+    }
+
     function hideEditorLines() {
       if (editorDraftLine) editorDraftLine.visible = false;
       if (editorDraftGlowLine) editorDraftGlowLine.visible = false;
@@ -6143,6 +6170,10 @@ function getRoadLineStyle(type) {
       const typeSelect = document.getElementById('editorTypeCode');
       const poiSelect = document.getElementById('editorPoiType');
       const transitSelect = document.getElementById('editorTransitType');
+      const zoomSlider = document.getElementById('editorZoom');
+      const zoomValue = document.getElementById('editorZoomValue');
+      const scaleSlider = document.getElementById('editorHandleScale');
+      const scaleValue = document.getElementById('editorHandleScaleValue');
       if (toolSelect) toolSelect.value = editorState.tool;
       if (layerSelect) {
         layerSelect.value = editorState.targetLayer;
@@ -6161,6 +6192,10 @@ function getRoadLineStyle(type) {
         transitSelect.disabled = (editorState.tool !== 'polyline');
         transitSelect.value = editorState.transitType;
       }
+      if (zoomSlider) zoomSlider.value = editorState.mapZoom;
+      if (zoomValue) zoomValue.value = editorState.mapZoom;
+      if (scaleSlider) scaleSlider.value = editorState.handleScale;
+      if (scaleValue) scaleValue.value = editorState.handleScale;
       updateEditorHeightControls();
     }
 
@@ -6299,7 +6334,8 @@ function getRoadLineStyle(type) {
       const points = editorState.draft;
       if (!points || points.length === 0) return;
 
-      const baseRadius = 5.2;
+      const scale = editorState.handleScale || 1;
+      const baseRadius = 5.2 * scale;
       const lastRadius = baseRadius * 1.3;
       const baseGeo = new THREE.SphereGeometry(baseRadius, 10, 10);
       const lastGeo = new THREE.SphereGeometry(lastRadius, 10, 10);
@@ -6329,7 +6365,8 @@ function getRoadLineStyle(type) {
       resetGroup(editorLineEndpointGroup);
       if (!editorActive() || editorState.tool !== 'polyline' || !blueprintData) return;
 
-      const sphereGeo = new THREE.SphereGeometry(6.2, 10, 10);
+      const scale = editorState.handleScale || 1;
+      const sphereGeo = new THREE.SphereGeometry(6.2 * scale, 10, 10);
       const endpoints = [];
       const minDist2 = 36;
 
@@ -6453,7 +6490,8 @@ function getRoadLineStyle(type) {
         editorSelectionGlowLine.visible = true;
       }
 
-      const sphereGeo = new THREE.SphereGeometry(6.5, 10, 10);
+      const scale = editorState.handleScale || 1;
+      const sphereGeo = new THREE.SphereGeometry(6.5 * scale, 10, 10);
       const vertexPoints = entry.polyline ? entry.polyline : entry.polygon;
       if (!vertexPoints) return;
       vertexPoints.forEach((pt, idx) => {
@@ -6946,6 +6984,10 @@ function getRoadLineStyle(type) {
       const snapGridToggle = document.getElementById('editorSnapGrid');
       const snapPixelToggle = document.getElementById('editorSnapPixels');
       const pixelStepInput = document.getElementById('editorPixelStep');
+      const zoomSlider = document.getElementById('editorZoom');
+      const zoomValue = document.getElementById('editorZoomValue');
+      const handleScaleSlider = document.getElementById('editorHandleScale');
+      const handleScaleValue = document.getElementById('editorHandleScaleValue');
       const deleteBtn = document.getElementById('editorDelete');
       const clearBtn = document.getElementById('editorClear');
       const hideCityToggle = document.getElementById('editorHideCity');
@@ -7065,6 +7107,20 @@ function getRoadLineStyle(type) {
         });
       }
 
+      const bindLinkedNumber = (slider, input, onChange) => {
+        if (!slider || !input) return;
+        const apply = (value) => {
+          slider.value = value;
+          input.value = value;
+          onChange(value);
+        };
+        slider.addEventListener('input', (e) => apply(e.target.value));
+        input.addEventListener('input', (e) => apply(e.target.value));
+      };
+
+      bindLinkedNumber(zoomSlider, zoomValue, (value) => applyEditorZoom(value));
+      bindLinkedNumber(handleScaleSlider, handleScaleValue, (value) => applyHandleScale(value));
+
       if (deleteBtn) deleteBtn.addEventListener('click', deleteSelection);
 
       if (clearBtn) {
@@ -7097,6 +7153,8 @@ function getRoadLineStyle(type) {
 
       updateDraftMarkers();
       updateEditorUIState();
+      applyEditorZoom(editorState.mapZoom);
+      applyHandleScale(editorState.handleScale);
     }
 
     function bindEditorEvents() {
