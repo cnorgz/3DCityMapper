@@ -989,6 +989,17 @@ const blueprintPreviewSettings = {
   showLabels: false
 };
 
+const panState = {
+  active: false,
+  pending: false,
+  pointerId: null,
+  lastX: 0,
+  lastY: 0,
+  isTouch: false,
+  deferredSelect: null,
+  touchPoints: new Map()
+};
+
 const LEGEND_LINE_COLORS = {
   Q: 0xff3b3b,
   B: 0xffe85c,
@@ -6071,6 +6082,25 @@ function getRoadLineStyle(type) {
       line.material.resolution.set(window.innerWidth, window.innerHeight);
     }
 
+    function canPanMap() {
+      const viewW = (orthoCamera.right - orthoCamera.left) / orthoCamera.zoom;
+      const viewH = (orthoCamera.top - orthoCamera.bottom) / orthoCamera.zoom;
+      return (MAP_WIDTH > viewW + 1) || (MAP_HEIGHT > viewH + 1);
+    }
+
+    function applyPanDelta(dxPx, dyPx) {
+      const viewW = (orthoCamera.right - orthoCamera.left) / orthoCamera.zoom;
+      const viewH = (orthoCamera.top - orthoCamera.bottom) / orthoCamera.zoom;
+      const worldPerPxX = viewW / window.innerWidth;
+      const worldPerPxZ = viewH / window.innerHeight;
+      const dxWorld = -dxPx * worldPerPxX;
+      const dzWorld = dyPx * worldPerPxZ;
+      orthoCamera.position.x += dxWorld;
+      orthoCamera.position.z += dzWorld;
+      orthoCamera.lookAt(orthoCamera.position.x, 0, orthoCamera.position.z);
+      orthoCamera.updateProjectionMatrix();
+    }
+
     function applyEditorZoom(value) {
       const zoom = clampNumber(Number.parseFloat(value), 0.5, 3);
       editorState.mapZoom = zoom;
@@ -7158,14 +7188,41 @@ function getRoadLineStyle(type) {
     }
 
     function bindEditorEvents() {
+      renderer.domElement.style.touchAction = 'none';
       renderer.domElement.addEventListener('pointerdown', (e) => {
         if (!editorActive()) return;
         if (e.button !== 0) return;
+
+        if (activeCamera === orthoCamera && e.pointerType === 'touch') {
+          panState.touchPoints.set(e.pointerId, { x: e.clientX, y: e.clientY });
+          if (panState.touchPoints.size >= 2 && canPanMap()) {
+            panState.active = true;
+            panState.isTouch = true;
+            panState.pending = false;
+            const pts = Array.from(panState.touchPoints.values());
+            panState.lastX = (pts[0].x + pts[1].x) / 2;
+            panState.lastY = (pts[0].y + pts[1].y) / 2;
+            renderer.domElement.setPointerCapture(e.pointerId);
+            return;
+          }
+        }
 
         const mapPoint = getPointerMapPoint(e);
         if (!mapPoint) return;
         const snapped = snapMapPoint(mapPoint);
         const mode = getEditorMode();
+
+        if (activeCamera === orthoCamera && canPanMap() && e.pointerType === 'mouse' && mode === 'select') {
+          panState.pending = true;
+          panState.active = false;
+          panState.isTouch = false;
+          panState.pointerId = e.pointerId;
+          panState.lastX = e.clientX;
+          panState.lastY = e.clientY;
+          panState.deferredSelect = { point: snapped };
+          renderer.domElement.setPointerCapture(e.pointerId);
+          return;
+        }
 
         if (mode === 'draw-polygon' || mode === 'draw-polyline') {
           // Draft mode: only draft vertices are interactive.
@@ -7348,6 +7405,41 @@ function getRoadLineStyle(type) {
 
       renderer.domElement.addEventListener('pointermove', (e) => {
         if (!editorActive()) return;
+
+        if (activeCamera === orthoCamera && e.pointerType === 'touch') {
+          if (panState.touchPoints.has(e.pointerId)) {
+            panState.touchPoints.set(e.pointerId, { x: e.clientX, y: e.clientY });
+          }
+          if (panState.active && panState.isTouch && panState.touchPoints.size >= 2) {
+            const pts = Array.from(panState.touchPoints.values());
+            const cx = (pts[0].x + pts[1].x) / 2;
+            const cy = (pts[0].y + pts[1].y) / 2;
+            const dx = cx - panState.lastX;
+            const dy = cy - panState.lastY;
+            panState.lastX = cx;
+            panState.lastY = cy;
+            applyPanDelta(dx, dy);
+            return;
+          }
+        }
+
+        if (panState.pending && e.pointerType === 'mouse' && e.pointerId === panState.pointerId) {
+          const dx = e.clientX - panState.lastX;
+          const dy = e.clientY - panState.lastY;
+          if (Math.hypot(dx, dy) > 3) {
+            panState.active = true;
+            panState.pending = false;
+          }
+        }
+        if (panState.active && !panState.isTouch && e.pointerId === panState.pointerId) {
+          const dx = e.clientX - panState.lastX;
+          const dy = e.clientY - panState.lastY;
+          panState.lastX = e.clientX;
+          panState.lastY = e.clientY;
+          applyPanDelta(dx, dy);
+          return;
+        }
+
         const mapPoint = getPointerMapPoint(e);
         if (!mapPoint) return;
         const snapped = snapMapPoint(mapPoint);
@@ -7428,13 +7520,51 @@ function getRoadLineStyle(type) {
         updateSelectionMarkers();
       });
 
-      renderer.domElement.addEventListener('pointerup', () => {
+      renderer.domElement.addEventListener('pointerup', (e) => {
+        if (e.pointerType === 'touch') {
+          panState.touchPoints.delete(e.pointerId);
+          if (panState.touchPoints.size < 2) {
+            panState.active = false;
+            panState.isTouch = false;
+          }
+        }
+        if (panState.pending && e.pointerId === panState.pointerId) {
+          panState.pending = false;
+          panState.active = false;
+          const deferred = panState.deferredSelect;
+          panState.deferredSelect = null;
+          if (deferred) {
+            const selection = selectAtPoint(deferred.point);
+            editorState.selected = selection;
+            updateSelectionMarkers();
+          }
+        }
+        if (panState.active && !panState.isTouch && e.pointerId === panState.pointerId) {
+          panState.active = false;
+          panState.pointerId = null;
+        }
         if (editorState.dragging?.historySnapshot &&
           editorState.dragging.didMove &&
           !editorState.dragging.historyPushed) {
           pushEditorHistory(editorState.dragging.historySnapshot);
         }
         editorState.dragging = null;
+      });
+
+      renderer.domElement.addEventListener('pointercancel', (e) => {
+        if (e.pointerType === 'touch') {
+          panState.touchPoints.delete(e.pointerId);
+          if (panState.touchPoints.size < 2) {
+            panState.active = false;
+            panState.isTouch = false;
+          }
+        }
+        if (panState.pointerId === e.pointerId) {
+          panState.pending = false;
+          panState.active = false;
+          panState.pointerId = null;
+          panState.deferredSelect = null;
+        }
       });
 
       window.addEventListener('keydown', (e) => {
