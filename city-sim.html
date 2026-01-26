@@ -606,6 +606,18 @@
       </select>
       <span></span>
     </div>
+    <label class="toggle-row">
+      <input type="checkbox" id="editorJunctionMode" />
+      <span>Insert Junction</span>
+    </label>
+    <label class="toggle-row">
+      <input type="checkbox" id="editorJunctionAutoSplit" />
+      <span>Auto-split crossings</span>
+    </label>
+    <label class="toggle-row">
+      <input type="checkbox" id="editorDebugRoadOffsets" />
+      <span>Debug: Road Offsets</span>
+    </label>
     <div class="control-row">
       <label for="editorPoiType">POI Type</label>
       <select id="editorPoiType">
@@ -694,7 +706,7 @@
         <li>Enter: finish polygon/line. Esc: cancel draft.</li>
         <li>Delete/Backspace: remove hovered draft point or current selection.</li>
         <li>Select tool: click a shape to edit vertices or drag the shape.</li>
-        <li>Roads: double-click an existing line/endpoint to start a junction (orange).</li>
+        <li>Roads: enable “Insert Junction” then tap an edge to add a junction.</li>
         <li>Roads: double-click a vertex in Select mode to toggle a curve.</li>
         <li>Pan map when zoomed (drag); use two fingers on touch.</li>
       </ul>
@@ -939,6 +951,7 @@ let blueprintData = null;
 let blueprintOutlineGroup = null;
 let blueprintMeshGroup = null;
 let blueprintCenterlineGroup = null;
+let blueprintOffsetDebugGroup = null;
 let editorGroup = null;
 let editorDraftLine = null;
 let editorDraftGlowLine = null;
@@ -949,6 +962,7 @@ let editorSelectionRibbon = null;
 let editorVertexGroup = null;
 let editorDraftVertexGroup = null;
 let editorLineEndpointGroup = null;
+let editorJunctionMarkerGroup = null;
 const debugSettings = {
   showGrid: false,
   showOverlayBounds: false,
@@ -973,12 +987,16 @@ const editorState = {
   hover: null,
   hoverDraftIndex: null,
   hoverLineEndpoint: null,
+  hoverJunction: null,
   lastPointerDown: null,
   hideCity: false,
   mapZoom: 1,
   handleScale: 1,
   junctionMode: false,
-  junctionBase: null
+  junctionBase: null,
+  junctionInsertMode: false,
+  junctionAutoSplit: true,
+  debugRoadOffsets: false
 };
 
 const editorHistory = {
@@ -1284,6 +1302,9 @@ function getRoadLineStyle(type) {
       if (blueprintCenterlineGroup) {
         blueprintCenterlineGroup.visible = allowed && debugSettings.showRoadCenterlines;
       }
+      if (blueprintOffsetDebugGroup) {
+        blueprintOffsetDebugGroup.visible = allowed && editorState.debugRoadOffsets;
+      }
     }
 
     function syncBlueprintRootToOverlay() {
@@ -1367,6 +1388,10 @@ function getRoadLineStyle(type) {
       blueprintCenterlineGroup = new THREE.Group();
       blueprintCenterlineGroup.name = 'RoadCenterlines';
       mapOverlayGroup.add(blueprintCenterlineGroup);
+
+      blueprintOffsetDebugGroup = new THREE.Group();
+      blueprintOffsetDebugGroup.name = 'RoadOffsetDebug';
+      mapOverlayGroup.add(blueprintOffsetDebugGroup);
     }
 
     function normalizeBlueprintData(data) {
@@ -1680,6 +1705,7 @@ function getRoadLineStyle(type) {
       resetGroup(blueprintMeshGroup);
       if (blueprintLabelGroup) resetGroup(blueprintLabelGroup);
       if (blueprintCenterlineGroup) resetGroup(blueprintCenterlineGroup);
+      if (blueprintOffsetDebugGroup) resetGroup(blueprintOffsetDebugGroup);
 
       const lineOpacity = blueprintPreviewSettings.opacity;
       const baseOutlineMat = new THREE.LineBasicMaterial({ color: 0x00f0ff, transparent: true, opacity: lineOpacity });
@@ -1777,6 +1803,41 @@ function getRoadLineStyle(type) {
         const renderPoints = getRenderPolylinePoints(entry);
         if (!renderPoints || renderPoints.length < 2) return;
         const kind = getLineKind(entry);
+        const style = getRoadLineStyle(kind);
+        const width = Number.isFinite(entry.width) ? entry.width : style.width;
+        if (editorState.debugRoadOffsets && !isTransitKind(kind) && blueprintOffsetDebugGroup) {
+          const rails = computeOffsetRails(renderPoints, width / 2, 2.5);
+          const leftPts = rails.left.map(p => new THREE.Vector3(p[0], Y.overlay + 0.09, p[1]));
+          const rightPts = rails.right.map(p => new THREE.Vector3(p[0], Y.overlay + 0.09, p[1]));
+          const leftGeom = new THREE.BufferGeometry().setFromPoints(leftPts);
+          const rightGeom = new THREE.BufferGeometry().setFromPoints(rightPts);
+          const leftMat = new THREE.LineBasicMaterial({ color: 0x44ff88, transparent: true, opacity: 0.9 });
+          const rightMat = new THREE.LineBasicMaterial({ color: 0xff4dd2, transparent: true, opacity: 0.9 });
+          const leftLine = new THREE.Line(leftGeom, leftMat);
+          const rightLine = new THREE.Line(rightGeom, rightMat);
+          leftLine.renderOrder = 1002;
+          rightLine.renderOrder = 1002;
+          blueprintOffsetDebugGroup.add(leftLine);
+          blueprintOffsetDebugGroup.add(rightLine);
+
+          const modeColor = (mode) => {
+            if (mode === 'MITER') return 0x55ff55;
+            if (mode === 'MITER_CLIP') return 0xffd65a;
+            if (mode === 'BEVEL') return 0xff5a5a;
+            return 0x66bbff;
+          };
+          const dotGeo = new THREE.SphereGeometry(2.6, 10, 10);
+          rails.clean.forEach((pt, idx) => {
+            const join = rails.joins[idx] || {};
+            const leftMode = join.leftMode || join.mode;
+            const rightMode = join.rightMode || join.mode;
+            const color = (leftMode === rightMode) ? modeColor(leftMode) : 0xffaa33;
+            const dot = new THREE.Mesh(dotGeo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.95, depthTest: false }));
+            dot.position.set(pt[0], Y.overlay + 0.095, pt[1]);
+            dot.renderOrder = 1004;
+            blueprintOffsetDebugGroup.add(dot);
+          });
+        }
         const pts = renderPoints.map(p => new THREE.Vector3(p[0], Y.overlay + 0.055, p[1]));
         const geometry = new THREE.BufferGeometry().setFromPoints(pts);
         let mat = null;
@@ -1784,7 +1845,6 @@ function getRoadLineStyle(type) {
           const style = TRANSIT_STYLES[kind] || TRANSIT_STYLES.METRO;
           mat = new THREE.LineBasicMaterial({ color: style.color });
         } else {
-          const style = getRoadLineStyle(kind);
           mat = new THREE.LineBasicMaterial({ color: style.outline, transparent: true, opacity: lineOpacity });
         }
         mat.depthTest = false;
@@ -2393,6 +2453,139 @@ function getRoadLineStyle(type) {
       return points.map(([x, z]) => [x, z * zSign]);
     }
 
+    function cleanPolylinePoints(points, eps = 0.5, colinearEps = 0.001) {
+      if (!points || points.length < 2) return points || [];
+      const out = [points[0]];
+      for (let i = 1; i < points.length; i++) {
+        const prev = out[out.length - 1];
+        const p = points[i];
+        const dx = p[0] - prev[0];
+        const dz = p[1] - prev[1];
+        if (dx * dx + dz * dz > eps * eps) out.push(p);
+      }
+      if (out.length <= 2) return out;
+      const trimmed = [out[0]];
+      for (let i = 1; i < out.length - 1; i++) {
+        const a = out[i - 1];
+        const b = out[i];
+        const c = out[i + 1];
+        const abx = b[0] - a[0];
+        const abz = b[1] - a[1];
+        const bcx = c[0] - b[0];
+        const bcz = c[1] - b[1];
+        const abLen = Math.hypot(abx, abz) || 1;
+        const bcLen = Math.hypot(bcx, bcz) || 1;
+        const abxN = abx / abLen;
+        const abzN = abz / abLen;
+        const bcxN = bcx / bcLen;
+        const bczN = bcz / bcLen;
+        const cross = abxN * bczN - abzN * bcxN;
+        const dot = abxN * bcxN + abzN * bczN;
+        if (Math.abs(cross) < colinearEps && dot > 0.999) continue;
+        trimmed.push(b);
+      }
+      trimmed.push(out[out.length - 1]);
+      return trimmed;
+    }
+
+    function lineIntersection(p, d, q, e) {
+      const denom = d[0] * e[1] - d[1] * e[0];
+      if (Math.abs(denom) < 1e-6) return null;
+      const t = ((q[0] - p[0]) * e[1] - (q[1] - p[1]) * e[0]) / denom;
+      return [p[0] + d[0] * t, p[1] + d[1] * t];
+    }
+
+    function computeOffsetRails(points, half, miterLimit = 2.5) {
+      const pts = cleanPolylinePoints(points);
+      if (pts.length < 2) return { left: [], right: [], joins: [], clean: pts };
+
+      const segs = [];
+      for (let i = 0; i < pts.length - 1; i++) {
+        const a = pts[i];
+        const b = pts[i + 1];
+        const dx = b[0] - a[0];
+        const dz = b[1] - a[1];
+        const len = Math.hypot(dx, dz) || 1;
+        const tx = dx / len;
+        const tz = dz / len;
+        // Left normal in world X/Z where +Z points downward.
+        const nx = tz;
+        const nz = -tx;
+        segs.push({ tx, tz, nx, nz });
+      }
+
+      const left = [];
+      const right = [];
+      const joins = [];
+
+      for (let i = 0; i < pts.length; i++) {
+        const p = pts[i];
+        if (i === 0) {
+          const n = segs[0];
+          left.push([p[0] + n.nx * half, p[1] + n.nz * half]);
+          right.push([p[0] - n.nx * half, p[1] - n.nz * half]);
+          joins.push({ mode: 'CAP' });
+          continue;
+        }
+        if (i === pts.length - 1) {
+          const n = segs[segs.length - 1];
+          left.push([p[0] + n.nx * half, p[1] + n.nz * half]);
+          right.push([p[0] - n.nx * half, p[1] - n.nz * half]);
+          joins.push({ mode: 'CAP' });
+          continue;
+        }
+
+        const prev = segs[i - 1];
+        const next = segs[i];
+        const cross = prev.tx * next.tz - prev.tz * next.tx;
+
+        const leftPrev = [p[0] + prev.nx * half, p[1] + prev.nz * half];
+        const leftNext = [p[0] + next.nx * half, p[1] + next.nz * half];
+        const rightPrev = [p[0] - prev.nx * half, p[1] - prev.nz * half];
+        const rightNext = [p[0] - next.nx * half, p[1] - next.nz * half];
+
+        let leftJoin = lineIntersection(leftPrev, [prev.tx, prev.tz], leftNext, [next.tx, next.tz]);
+        let leftMode = 'MITER';
+        const leftInner = cross < 0;
+        if (!leftJoin || leftInner) {
+          leftJoin = [leftPrev[0], leftPrev[1]];
+          leftMode = 'BEVEL';
+        } else {
+          const lx = leftJoin[0] - p[0];
+          const lz = leftJoin[1] - p[1];
+          const lLen = Math.hypot(lx, lz);
+          const maxLen = miterLimit * half;
+          if (lLen > maxLen) {
+            leftJoin = [p[0] + (lx / lLen) * maxLen, p[1] + (lz / lLen) * maxLen];
+            leftMode = 'MITER_CLIP';
+          }
+        }
+
+        let rightJoin = lineIntersection(rightPrev, [prev.tx, prev.tz], rightNext, [next.tx, next.tz]);
+        let rightMode = 'MITER';
+        const rightInner = cross > 0;
+        if (!rightJoin || rightInner) {
+          rightJoin = [rightPrev[0], rightPrev[1]];
+          rightMode = 'BEVEL';
+        } else {
+          const rx = rightJoin[0] - p[0];
+          const rz = rightJoin[1] - p[1];
+          const rLen = Math.hypot(rx, rz);
+          const maxLen = miterLimit * half;
+          if (rLen > maxLen) {
+            rightJoin = [p[0] + (rx / rLen) * maxLen, p[1] + (rz / rLen) * maxLen];
+            rightMode = 'MITER_CLIP';
+          }
+        }
+
+        left.push(leftJoin);
+        right.push(rightJoin);
+        joins.push({ leftMode, rightMode, cross });
+      }
+
+      return { left, right, joins, clean: pts };
+    }
+
     function buildRibbonGeometryFromPolyline(points, width, y = 0, options = {}) {
       if (!points || points.length < 2) return null;
       const half = width / 2;
@@ -2404,67 +2597,19 @@ function getRoadLineStyle(type) {
       const positions = [];
       const uvs = [];
       const indices = [];
-      const count = points.length;
-      const segNormals = [];
+      const rails = computeOffsetRails(points, half, miterLimit);
+      const clean = rails.clean;
+      if (!clean || clean.length < 2) return null;
+      const count = clean.length;
+      const leftRight = clean.map((_, i) => [rails.left[i], rails.right[i]]);
       const segLengths = [];
       let totalLength = 0;
-
       for (let i = 0; i < count - 1; i++) {
-        const [x1, z1] = points[i];
-        const [x2, z2] = points[i + 1];
-        const dx = x2 - x1;
-        const dz = z2 - z1;
-        const len = Math.hypot(dx, dz) || 1;
+        const [x1, z1] = clean[i];
+        const [x2, z2] = clean[i + 1];
+        const len = Math.hypot(x2 - x1, z2 - z1) || 1;
         segLengths.push(len);
         totalLength += len;
-        const nx = -(dz / len);
-        const nz = dx / len;
-        segNormals.push([nx, nz]);
-      }
-      for (let i = 1; i < segNormals.length; i++) {
-        const prev = segNormals[i - 1];
-        const curr = segNormals[i];
-        const dot = prev[0] * curr[0] + prev[1] * curr[1];
-        if (dot < 0) {
-          curr[0] *= -1;
-          curr[1] *= -1;
-        }
-      }
-
-      const leftRight = [];
-      for (let i = 0; i < count; i++) {
-        const [x, z] = points[i];
-        let nx = 0;
-        let nz = 0;
-        if (i === 0) {
-          [nx, nz] = segNormals[0];
-        } else if (i === count - 1) {
-          [nx, nz] = segNormals[count - 2];
-        } else {
-          const [n0x, n0z] = segNormals[i - 1];
-          const [n1x, n1z] = segNormals[i];
-          const mx = n0x + n1x;
-          const mz = n0z + n1z;
-          const mLen = Math.hypot(mx, mz);
-          const dot = n0x * n1x + n0z * n1z;
-          if (mLen > 0.0001 && dot > 0.2) {
-            const mtx = mx / mLen;
-            const mtz = mz / mLen;
-            nx = mtx;
-            nz = mtz;
-            leftRight.push([
-              [x + nx * half, z + nz * half],
-              [x - nx * half, z - nz * half]
-            ]);
-            continue;
-          }
-          nx = n1x;
-          nz = n1z;
-        }
-        leftRight.push([
-          [x + nx * half, z + nz * half],
-          [x - nx * half, z - nz * half]
-        ]);
       }
 
       let acc = 0;
@@ -2504,6 +2649,35 @@ function getRoadLineStyle(type) {
       mesh.castShadow = false;
       return mesh;
     }
+
+    window.__TEST_RIBBON__ = (opts = {}) => {
+      const angleDeg = Number.isFinite(opts.angleDeg) ? opts.angleDeg : 90;
+      const length = Number.isFinite(opts.length) ? opts.length : 40;
+      const width = Number.isFinite(opts.width) ? opts.width : 8;
+      const rad = (angleDeg * Math.PI) / 180;
+      const p0 = [0, 0];
+      const p1 = [length, 0];
+      const p2 = [length + Math.cos(rad) * length, Math.sin(rad) * length];
+      const geom = buildRibbonGeometryFromPolyline([p0, p1, p2], width, 0, { miterLimit: 2.5 });
+      if (!geom) return { ok: false, reason: 'no-geometry' };
+      const pos = geom.attributes.position.array;
+      const idx = geom.index.array;
+      let minArea = Infinity;
+      for (let i = 0; i < idx.length; i += 3) {
+        const ia = idx[i] * 3;
+        const ib = idx[i + 1] * 3;
+        const ic = idx[i + 2] * 3;
+        const ax = pos[ia];
+        const az = pos[ia + 2];
+        const bx = pos[ib];
+        const bz = pos[ib + 2];
+        const cx = pos[ic];
+        const cz = pos[ic + 2];
+        const area = Math.abs((bx - ax) * (cz - az) - (bz - az) * (cx - ax)) * 0.5;
+        minArea = Math.min(minArea, area);
+      }
+      return { ok: minArea > 0.0001, minArea, triangles: idx.length / 3 };
+    };
 
     function createRoadSegmentsFromPolyline(points, width = 12, options = {}) {
       const group = new THREE.Group();
@@ -2625,8 +2799,8 @@ function getRoadLineStyle(type) {
         const dx = x2 - x1;
         const dz = z2 - z1;
         const len = Math.hypot(dx, dz) || 1;
-        const nx = -(dz / len);
-        const nz = dx / len;
+        const nx = dz / len;
+        const nz = -dx / len;
         segNormals.push([nx, nz]);
       }
       const out = [];
@@ -2698,6 +2872,66 @@ function getRoadLineStyle(type) {
       return { points, lengths, total, closed };
     }
 
+    function buildRoadGraph(roads) {
+      const nodes = [];
+      const nodeMap = new Map();
+      const eps = 1.5;
+      const keyFor = (x, z) => `${Math.round(x / eps)}|${Math.round(z / eps)}`;
+      const getNode = (x, z) => {
+        const key = keyFor(x, z);
+        let node = nodeMap.get(key);
+        if (!node) {
+          node = { id: nodes.length, x, z, edges: [] };
+          nodeMap.set(key, node);
+          nodes.push(node);
+        }
+        return node;
+      };
+
+      (roads || []).forEach((entry) => {
+        if (!entry?.polyline || entry.polyline.length < 2) return;
+        const kind = getLineKind(entry);
+        if (isTransitKind(kind) || kind === 'PATH') return;
+        const renderPoints = getRenderPolylinePoints(entry);
+        if (!renderPoints || renderPoints.length < 2) return;
+        for (let i = 0; i < renderPoints.length - 1; i++) {
+          const a = renderPoints[i];
+          const b = renderPoints[i + 1];
+          const nodeA = getNode(a[0], a[1]);
+          const nodeB = getNode(b[0], b[1]);
+          nodeA.edges.push({ to: nodeB, kind });
+          nodeB.edges.push({ to: nodeA, kind });
+        }
+      });
+
+      return { nodes };
+    }
+
+    function buildRandomWalkPolyline(graph, maxSteps = 10) {
+      if (!graph?.nodes || graph.nodes.length === 0) return null;
+      let start = graph.nodes[Math.floor(Math.random() * graph.nodes.length)];
+      if (!start.edges.length) {
+        start = graph.nodes.find(node => node.edges.length > 0);
+      }
+      if (!start || !start.edges.length) return null;
+      const points = [[start.x, start.z]];
+      const kinds = [];
+      let current = start;
+      let prev = null;
+      for (let step = 0; step < maxSteps; step++) {
+        const options = current.edges.filter(edge => edge.to !== prev);
+        const edge = options.length ? options[Math.floor(Math.random() * options.length)] : current.edges[0];
+        if (!edge) break;
+        kinds.push(edge.kind);
+        prev = current;
+        current = edge.to;
+        points.push([current.x, current.z]);
+      }
+      if (points.length < 2) return null;
+      const kind = kinds.includes('ROAD_MAJOR') ? 'ROAD_MAJOR' : 'ROAD_MINOR';
+      return { points, kind };
+    }
+
     function samplePathAt(path, distance, direction = 1) {
       if (!path || !path.points || path.points.length < 2) return null;
       let dist = distance;
@@ -2741,33 +2975,35 @@ function getRoadLineStyle(type) {
       if (!blueprintCityEnabled || !blueprintData) return;
 
       const roads = blueprintData.roads || [];
+      const graph = buildRoadGraph(roads);
       const paths = [];
-      roads.forEach(entry => {
-        if (!entry?.polyline || entry.polyline.length < 2) return;
-        const kind = getLineKind(entry);
-        if (isTransitKind(kind) || kind === 'PATH') return;
-        const renderPoints = getRenderPolylinePoints(entry);
-        if (!renderPoints || renderPoints.length < 2) return;
+      const maxPaths = Math.min(18, graph.nodes.length * 2);
+      let attempts = 0;
+      while (paths.length < maxPaths && attempts < maxPaths * 4) {
+        attempts += 1;
+        const walk = buildRandomWalkPolyline(graph, 10 + Math.floor(Math.random() * 8));
+        if (!walk || walk.points.length < 2) continue;
+        const kind = walk.kind || 'ROAD_MINOR';
         const style = getRoadLineStyle(kind);
-        const width = Number.isFinite(entry.width) ? entry.width : style.width;
+        const width = style.width;
         const laneOffset = Math.max(2.5, width * TRAFFIC_SETTINGS.laneOffsetFactor);
-        const left = buildOffsetPolyline(renderPoints, laneOffset, 2);
-        const right = buildOffsetPolyline(renderPoints, -laneOffset, 2);
+        const left = buildOffsetPolyline(walk.points, laneOffset, 2);
+        const right = buildOffsetPolyline(walk.points, -laneOffset, 2);
         const leftSmooth = smoothPolyline(left, 1, 0.25);
         const rightSmooth = smoothPolyline(right, 1, 0.25);
         const leftPath = buildPathData(leftSmooth);
         const rightPath = buildPathData(rightSmooth);
-        if (leftPath) {
+        if (leftPath && leftPath.total >= TRAFFIC_SETTINGS.minRoadLength) {
           leftPath.kind = kind;
           leftPath.direction = 1;
           paths.push(leftPath);
         }
-        if (rightPath) {
+        if (rightPath && rightPath.total >= TRAFFIC_SETTINGS.minRoadLength) {
           rightPath.kind = kind;
           rightPath.direction = -1;
           paths.push(rightPath);
         }
-      });
+      }
 
       blueprintTraffic.paths = paths.filter(p => p && p.total >= TRAFFIC_SETTINGS.minRoadLength);
       let spawned = 0;
@@ -2866,8 +3102,8 @@ function getRoadLineStyle(type) {
         const dx = next[0] - prev[0];
         const dz = next[1] - prev[1];
         const len = Math.hypot(dx, dz) || 1;
-        const nx = -(dz / len);
-        const nz = dx / len;
+        const nx = dz / len;
+        const nz = -dx / len;
         left.push([points[i][0] + nx * offset, points[i][1] + nz * offset]);
         right.push([points[i][0] - nx * offset, points[i][1] - nz * offset]);
       }
@@ -6153,6 +6389,10 @@ function getRoadLineStyle(type) {
       editorLineEndpointGroup = new THREE.Group();
       editorLineEndpointGroup.name = 'EditorLineEndpoints';
       editorGroup.add(editorLineEndpointGroup);
+
+      editorJunctionMarkerGroup = new THREE.Group();
+      editorJunctionMarkerGroup.name = 'EditorJunctionMarkers';
+      editorGroup.add(editorJunctionMarkerGroup);
       editorGroup.visible = editorState.enabled;
 
       updateLineResolution(editorDraftLine);
@@ -6296,6 +6536,9 @@ function getRoadLineStyle(type) {
       const typeSelect = document.getElementById('editorTypeCode');
       const poiSelect = document.getElementById('editorPoiType');
       const transitSelect = document.getElementById('editorTransitType');
+      const junctionToggle = document.getElementById('editorJunctionMode');
+      const junctionSplitToggle = document.getElementById('editorJunctionAutoSplit');
+      const debugOffsetsToggle = document.getElementById('editorDebugRoadOffsets');
       const zoomSlider = document.getElementById('editorZoom');
       const zoomValue = document.getElementById('editorZoomValue');
       const scaleSlider = document.getElementById('editorHandleScale');
@@ -6318,6 +6561,9 @@ function getRoadLineStyle(type) {
         transitSelect.disabled = (editorState.tool !== 'polyline');
         transitSelect.value = editorState.transitType;
       }
+      if (junctionToggle) junctionToggle.checked = editorState.junctionInsertMode;
+      if (junctionSplitToggle) junctionSplitToggle.checked = editorState.junctionAutoSplit;
+      if (debugOffsetsToggle) debugOffsetsToggle.checked = editorState.debugRoadOffsets;
       if (zoomSlider) zoomSlider.value = editorState.mapZoom;
       if (zoomValue) zoomValue.value = editorState.mapZoom;
       if (scaleSlider) scaleSlider.value = editorState.handleScale;
@@ -6535,6 +6781,28 @@ function getRoadLineStyle(type) {
         sphere.renderOrder = 1003;
         editorLineEndpointGroup.add(sphere);
       });
+    }
+
+    function updateJunctionMarkers() {
+      if (!editorJunctionMarkerGroup) return;
+      resetGroup(editorJunctionMarkerGroup);
+      if (!editorActive() || !editorState.junctionInsertMode) return;
+      const hover = editorState.hoverJunction;
+      if (!hover || !hover.point) return;
+      const scale = editorState.handleScale || 1;
+      const radius = 6.6 * scale;
+      const mat = new THREE.MeshBasicMaterial({
+        color: 0xff8a00,
+        transparent: true,
+        opacity: 0.95,
+        depthTest: false,
+        depthWrite: false
+      });
+      const geo = new THREE.SphereGeometry(radius, 10, 10);
+      const marker = new THREE.Mesh(geo, mat);
+      marker.position.set(hover.point.x, Y.overlay + 0.135, hover.point.z);
+      marker.renderOrder = 1005;
+      editorJunctionMarkerGroup.add(marker);
     }
 
     function scheduleEditorRebuild() {
@@ -6802,7 +7070,7 @@ function getRoadLineStyle(type) {
       const cz = a[1] + abz * clamped;
       const dx = point.x - cx;
       const dz = point.z - cz;
-      return { dist2: dx * dx + dz * dz, closest: { x: cx, z: cz } };
+      return { dist2: dx * dx + dz * dz, closest: { x: cx, z: cz }, t, tClamped: clamped };
     }
 
     function findNearestEdge(point, threshold) {
@@ -6821,7 +7089,7 @@ function getRoadLineStyle(type) {
             const b = points[(i + 1) % points.length];
             const res = distancePointToSegment(point, a, b);
             if (res.dist2 < thresh2 && (!best || res.dist2 < best.dist2)) {
-              best = { layer, index: idx, segmentIndex: i + 1, dist2: res.dist2, point: res.closest };
+              best = { layer, index: idx, segmentIndex: i + 1, segmentStart: i, dist2: res.dist2, point: res.closest, t: res.tClamped };
             }
           }
         });
@@ -6841,7 +7109,7 @@ function getRoadLineStyle(type) {
         const b = points[(i + 1) % points.length];
         const res = distancePointToSegment(point, a, b);
         if (res.dist2 < thresh2 && (!best || res.dist2 < best.dist2)) {
-          best = { segmentIndex: i + 1, dist2: res.dist2, point: res.closest };
+          best = { segmentIndex: i + 1, segmentStart: i, dist2: res.dist2, point: res.closest, t: res.tClamped };
         }
       }
       return best;
@@ -6869,12 +7137,33 @@ function getRoadLineStyle(type) {
     }
 
     function findNearestLineEdge(point, threshold) {
-      const hit = findNearestEdge(point, threshold);
-      if (!hit) return null;
-      const entry = blueprintData?.[hit.layer]?.[hit.index];
-      if (!entry?.polyline) return null;
-      if (isCurveSegment(entry, hit.segmentIndex)) return null;
-      return hit;
+      if (!blueprintData) return null;
+      const thresh2 = threshold * threshold;
+      let best = null;
+      (blueprintData.roads || []).forEach((entry, idx) => {
+        if (!entry?.polyline || entry.polyline.length < 2) return;
+        const points = entry.polyline;
+        for (let i = 0; i < points.length - 1; i++) {
+          const a = points[i];
+          const b = points[i + 1];
+          const res = distancePointToSegment(point, a, b);
+          if (res.dist2 < thresh2 && (!best || res.dist2 < best.dist2)) {
+            const segmentIndex = i + 1;
+            if (!isCurveSegment(entry, segmentIndex)) {
+              best = {
+                layer: 'roads',
+                index: idx,
+                segmentIndex,
+                segmentStart: i,
+                dist2: res.dist2,
+                point: res.closest,
+                t: res.tClamped
+              };
+            }
+          }
+        }
+      });
+      return best;
     }
 
     function isCurveSegment(entry, segmentIndex) {
@@ -6998,6 +7287,7 @@ function getRoadLineStyle(type) {
       editorState.hover = null;
       editorState.hoverDraftIndex = null;
       editorState.hoverLineEndpoint = null;
+      editorState.hoverJunction = null;
       const mode = getEditorMode();
       if (mode === 'draw-polygon' || mode === 'draw-polyline') {
         const draftHit = findNearestDraftVertex(point, getEditorHitRadius(10));
@@ -7012,6 +7302,12 @@ function getRoadLineStyle(type) {
               index: endpointHit.index,
               vertexIndex: endpointHit.vertexIndex
             };
+          }
+          if (editorState.junctionInsertMode) {
+            const edgeHit = findNearestLineEdge(point, getEditorHitRadius(14));
+            if (edgeHit) {
+              editorState.hoverJunction = edgeHit;
+            }
           }
         }
       }
@@ -7031,6 +7327,7 @@ function getRoadLineStyle(type) {
       }
       updateDraftMarkers();
       updateLineEndpointMarkers();
+      updateJunctionMarkers();
     }
 
     function isDoubleClick(point) {
@@ -7249,6 +7546,27 @@ function getRoadLineStyle(type) {
         });
       }
 
+      if (junctionToggle) {
+        junctionToggle.checked = editorState.junctionInsertMode;
+        junctionToggle.addEventListener('change', (e) => {
+          editorState.junctionInsertMode = !!e.target.checked;
+          updateEditorStatus(editorState.junctionInsertMode ? 'Junction mode enabled.' : 'Junction mode disabled.');
+        });
+      }
+      if (junctionSplitToggle) {
+        junctionSplitToggle.checked = editorState.junctionAutoSplit;
+        junctionSplitToggle.addEventListener('change', (e) => {
+          editorState.junctionAutoSplit = !!e.target.checked;
+        });
+      }
+      if (debugOffsetsToggle) {
+        debugOffsetsToggle.checked = editorState.debugRoadOffsets;
+        debugOffsetsToggle.addEventListener('change', (e) => {
+          editorState.debugRoadOffsets = !!e.target.checked;
+          buildBlueprintFromData(blueprintData || normalizeBlueprintData({}));
+        });
+      }
+
       if (heightRange && heightValue) {
         heightRange.addEventListener('input', (e) => {
           heightValue.value = e.target.value;
@@ -7350,10 +7668,81 @@ function getRoadLineStyle(type) {
       editorState.junctionBase = null;
     }
 
+    function insertJunctionAtEdge(edgeHit) {
+      if (!edgeHit || !blueprintData) return null;
+      const entry = blueprintData?.[edgeHit.layer]?.[edgeHit.index];
+      if (!entry?.polyline || entry.polyline.length < 2) return null;
+      if (isCurveSegment(entry, edgeHit.segmentIndex)) return null;
+      const insertIndex = edgeHit.segmentIndex;
+      const points = entry.polyline;
+      const start = points[insertIndex - 1];
+      const end = points[insertIndex];
+      if (!start || !end) return null;
+      const t = Number.isFinite(edgeHit.t) ? edgeHit.t : 0.5;
+      if (t <= 0.02) return { point: { x: start[0], z: start[1] }, inserted: false };
+      if (t >= 0.98) return { point: { x: end[0], z: end[1] }, inserted: false };
+      const newPoint = [edgeHit.point.x, edgeHit.point.z];
+      points.splice(insertIndex, 0, newPoint);
+      if (Array.isArray(entry.curves)) {
+        entry.curves = entry.curves.map(c => (c >= insertIndex ? c + 1 : c));
+      }
+      return { point: { x: newPoint[0], z: newPoint[1] }, inserted: true };
+    }
+
+    function autoSplitRoadCrossings(point, sourceIndex) {
+      if (!point || !blueprintData) return;
+      const px = point.x;
+      const pz = point.z;
+      const radius = Math.max(2.5, getEditorHitRadius(10));
+      const thresh2 = radius * radius;
+      const roads = blueprintData.roads || [];
+      roads.forEach((entry, idx) => {
+        if (!entry?.polyline || entry.polyline.length < 2) return;
+        if (idx === sourceIndex) return;
+        const points = entry.polyline;
+        for (let i = 0; i < points.length - 1; i++) {
+          const a = points[i];
+          const b = points[i + 1];
+          const res = distancePointToSegment({ x: px, z: pz }, a, b);
+          if (res.dist2 > thresh2) continue;
+          if (res.tClamped <= 0.05 || res.tClamped >= 0.95) continue;
+          const exists = points.some(pt => {
+            const dx = pt[0] - px;
+            const dz = pt[1] - pz;
+            return (dx * dx + dz * dz) < 1;
+          });
+          if (exists) return;
+          points.splice(i + 1, 0, [px, pz]);
+          if (Array.isArray(entry.curves)) {
+            entry.curves = entry.curves.map(c => (c >= i + 1 ? c + 1 : c));
+          }
+          i += 1;
+        }
+      });
+    }
+
     function handleEditorPointerDown(snapped, mapPoint, mode, doubleClickOverride = null) {
       const doubleClick = (typeof doubleClickOverride === 'boolean')
         ? doubleClickOverride
         : isDoubleClick(snapped);
+
+      if (editorState.junctionInsertMode && editorState.tool === 'polyline') {
+        const edgeHit = findNearestLineEdge(mapPoint, getEditorHitRadius(14));
+        if (!edgeHit) {
+          updateEditorStatus('Junction mode: tap a road edge.');
+          return;
+        }
+        pushEditorHistory(snapshotEditorState());
+        const result = insertJunctionAtEdge(edgeHit);
+        if (result && result.inserted && editorState.junctionAutoSplit) {
+          autoSplitRoadCrossings(result.point, edgeHit.index);
+        }
+        buildBlueprintFromData(blueprintData);
+        rebuildBlueprintCity();
+        updateSelectionMarkers();
+        updateEditorStatus(result?.inserted ? 'Junction inserted.' : 'Junction snapped to endpoint.');
+        return;
+      }
 
       if (mode === 'draw-polygon' || mode === 'draw-polyline') {
         const draftHit = findNearestDraftVertex(snapped, getEditorHitRadius(10));
