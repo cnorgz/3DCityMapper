@@ -619,6 +619,16 @@
       <span>Debug: Road Offsets</span>
     </label>
     <div class="control-row">
+      <label for="trafficCarCount">Cars</label>
+      <input type="range" id="trafficCarCount" min="0" max="40" step="1" value="12" />
+      <input type="number" id="trafficCarCountValue" min="0" max="40" step="1" value="12" />
+    </div>
+    <div class="control-row">
+      <label for="trafficSpeed">Car Speed</label>
+      <input type="range" id="trafficSpeed" min="0.2" max="3" step="0.1" value="1" />
+      <input type="number" id="trafficSpeedValue" min="0.2" max="3" step="0.1" value="1" />
+    </div>
+    <div class="control-row">
       <label for="editorPoiType">POI Type</label>
       <select id="editorPoiType">
         <option value="METRO_STATION">METRO</option>
@@ -707,6 +717,7 @@
         <li>Delete/Backspace: remove hovered draft point or current selection.</li>
         <li>Select tool: click a shape to edit vertices or drag the shape.</li>
         <li>Roads: enable “Insert Junction” then tap an edge to add a junction.</li>
+        <li>Auto-split crossings: splits other roads that cross a new junction point.</li>
         <li>Roads: double-click a vertex in Select mode to toggle a curve.</li>
         <li>Pan map when zoomed (drag); use two fingers on touch.</li>
       </ul>
@@ -970,7 +981,7 @@ const debugSettings = {
   showRoadCenterlines: false
 };
 
-const editorState = {
+  const editorState = {
     enabled: false,
     tool: 'select',
     targetLayer: 'zones',
@@ -997,6 +1008,11 @@ const editorState = {
   junctionInsertMode: false,
   junctionAutoSplit: true,
   debugRoadOffsets: false
+};
+
+const trafficRuntime = {
+  maxCars: 12,
+  speedScale: 1
 };
 
 const editorHistory = {
@@ -3029,8 +3045,9 @@ function getRoadLineStyle(type) {
 
       blueprintTraffic.paths = paths.filter(p => p && p.total >= TRAFFIC_SETTINGS.minRoadLength);
       let spawned = 0;
+      const maxCars = Math.max(0, Number.isFinite(trafficRuntime.maxCars) ? trafficRuntime.maxCars : TRAFFIC_SETTINGS.maxCars);
       blueprintTraffic.paths.forEach(path => {
-        if (spawned >= TRAFFIC_SETTINGS.maxCars) return;
+        if (spawned >= maxCars) return;
         const color = COLORS.cars?.[Math.floor(Math.random() * COLORS.cars.length)] ?? 0xff3333;
         const car = createCar(color);
         car.userData.blueprintTraffic = true;
@@ -3038,7 +3055,7 @@ function getRoadLineStyle(type) {
         car.userData.distance = Math.random() * path.total;
         car.userData.direction = Number.isFinite(path.direction) ? path.direction : 1;
         const baseSpeed = path.kind === 'ROAD_MAJOR' ? TRAFFIC_SETTINGS.speedMajor : TRAFFIC_SETTINGS.speedMinor;
-        car.userData.speed = baseSpeed * (0.7 + Math.random() * 0.6);
+        car.userData.speed = baseSpeed * (0.7 + Math.random() * 0.6) * trafficRuntime.speedScale;
         const sample = samplePathAt(path, car.userData.distance, car.userData.direction);
         if (sample) {
           car.position.set(sample.x, Y.roads + TRAFFIC_SETTINGS.yOffset, sample.z);
@@ -6594,6 +6611,14 @@ function getRoadLineStyle(type) {
       if (zoomValue) zoomValue.value = editorState.mapZoom;
       if (scaleSlider) scaleSlider.value = editorState.handleScale;
       if (scaleValue) scaleValue.value = editorState.handleScale;
+      const trafficCarSlider = document.getElementById('trafficCarCount');
+      const trafficCarValue = document.getElementById('trafficCarCountValue');
+      const trafficSpeedSlider = document.getElementById('trafficSpeed');
+      const trafficSpeedValue = document.getElementById('trafficSpeedValue');
+      if (trafficCarSlider) trafficCarSlider.value = trafficRuntime.maxCars;
+      if (trafficCarValue) trafficCarValue.value = trafficRuntime.maxCars;
+      if (trafficSpeedSlider) trafficSpeedSlider.value = trafficRuntime.speedScale;
+      if (trafficSpeedValue) trafficSpeedValue.value = trafficRuntime.speedScale;
       updateEditorHeightControls();
     }
 
@@ -7162,6 +7187,24 @@ function getRoadLineStyle(type) {
       return best;
     }
 
+    function findNearestLineVertex(point, threshold) {
+      if (!blueprintData) return null;
+      const thresh2 = threshold * threshold;
+      let best = null;
+      (blueprintData.roads || []).forEach((entry, idx) => {
+        if (!entry?.polyline || entry.polyline.length < 2) return;
+        entry.polyline.forEach((pt, vIdx) => {
+          const dx = pt[0] - point.x;
+          const dz = pt[1] - point.z;
+          const d2 = dx * dx + dz * dz;
+          if (d2 < thresh2 && (!best || d2 < best.dist2)) {
+            best = { layer: 'roads', index: idx, vertexIndex: vIdx, dist2: d2, point: [pt[0], pt[1]] };
+          }
+        });
+      });
+      return best;
+    }
+
     function findNearestLineEdge(point, threshold) {
       if (!blueprintData) return null;
       const thresh2 = threshold * threshold;
@@ -7490,6 +7533,10 @@ function getRoadLineStyle(type) {
       const junctionToggle = document.getElementById('editorJunctionMode');
       const junctionSplitToggle = document.getElementById('editorJunctionAutoSplit');
       const debugOffsetsToggle = document.getElementById('editorDebugRoadOffsets');
+      const trafficCarSlider = document.getElementById('trafficCarCount');
+      const trafficCarValue = document.getElementById('trafficCarCountValue');
+      const trafficSpeedSlider = document.getElementById('trafficSpeed');
+      const trafficSpeedValue = document.getElementById('trafficSpeedValue');
       const heightRange = document.getElementById('editorHeightRange');
       const heightValue = document.getElementById('editorHeightValue');
       const heightApply = document.getElementById('editorHeightApply');
@@ -7595,6 +7642,26 @@ function getRoadLineStyle(type) {
           buildBlueprintFromData(blueprintData || normalizeBlueprintData({}));
         });
       }
+
+      const bindTrafficNumber = (slider, input, onChange) => {
+        if (!slider || !input) return;
+        const apply = (value) => {
+          slider.value = value;
+          input.value = value;
+          onChange(value);
+        };
+        slider.addEventListener('input', (e) => apply(e.target.value));
+        input.addEventListener('input', (e) => apply(e.target.value));
+      };
+
+      bindTrafficNumber(trafficCarSlider, trafficCarValue, (value) => {
+        trafficRuntime.maxCars = Math.max(0, Math.min(40, Number.parseInt(value, 10) || 0));
+        rebuildBlueprintTraffic();
+      });
+
+      bindTrafficNumber(trafficSpeedSlider, trafficSpeedValue, (value) => {
+        trafficRuntime.speedScale = Math.max(0.2, Math.min(3, Number.parseFloat(value) || 1));
+      });
 
       if (heightRange && heightValue) {
         heightRange.addEventListener('input', (e) => {
@@ -7783,6 +7850,7 @@ function getRoadLineStyle(type) {
         if (mode === 'draw-polyline') {
           const baseEndpointRadius = doubleClick ? 22 : 16;
           const baseEdgeRadius = doubleClick ? 24 : 12;
+          const vertexHit = findNearestLineVertex(mapPoint, getEditorHitRadius(baseEndpointRadius));
           const endpointHit = findNearestLineEndpoint(mapPoint, getEditorHitRadius(baseEndpointRadius));
           const edgeHit = findNearestLineEdge(mapPoint, getEditorHitRadius(baseEdgeRadius));
           const edgeEntry = edgeHit ? blueprintData?.[edgeHit.layer]?.[edgeHit.index] : null;
@@ -7851,7 +7919,9 @@ function getRoadLineStyle(type) {
               }
             }
 
-            if (endpointHit) {
+            if (vertexHit) {
+              editorState.draft.push([vertexHit.point[0], vertexHit.point[1]]);
+            } else if (endpointHit) {
               editorState.draft.push([endpointHit.point[0], endpointHit.point[1]]);
             } else {
               editorState.draft.push([snapped.x, snapped.z]);
@@ -7863,6 +7933,15 @@ function getRoadLineStyle(type) {
             return;
           }
 
+          const draftStart = editorState.draft[0];
+          const dxStart = draftStart ? (snapped.x - draftStart[0]) : 0;
+          const dzStart = draftStart ? (snapped.z - draftStart[1]) : 0;
+          const closeStart = draftStart && (dxStart * dxStart + dzStart * dzStart) <= getEditorHitRadius(14) * getEditorHitRadius(14);
+          if (closeStart && editorState.draft.length >= 2) {
+            addPolylineFromDraft();
+            return;
+          }
+
           if (doubleClick) {
             if (endpointHit) {
               const last = editorState.draft[editorState.draft.length - 1];
@@ -7870,6 +7949,16 @@ function getRoadLineStyle(type) {
               const dz = endpointHit.point[1] - last[1];
               if (dx * dx + dz * dz > 0.0001) {
                 editorState.draft.push([endpointHit.point[0], endpointHit.point[1]]);
+              }
+              addPolylineFromDraft();
+              return;
+            }
+            if (vertexHit) {
+              const last = editorState.draft[editorState.draft.length - 1];
+              const dx = vertexHit.point[0] - last[0];
+              const dz = vertexHit.point[1] - last[1];
+              if (dx * dx + dz * dz > 0.0001) {
+                editorState.draft.push([vertexHit.point[0], vertexHit.point[1]]);
               }
               addPolylineFromDraft();
               return;
@@ -7885,6 +7974,17 @@ function getRoadLineStyle(type) {
               return;
             }
             editorState.draft.push([snapped.x, snapped.z]);
+            addPolylineFromDraft();
+            return;
+          }
+
+          if (vertexHit) {
+            const last = editorState.draft[editorState.draft.length - 1];
+            const dx = vertexHit.point[0] - last[0];
+            const dz = vertexHit.point[1] - last[1];
+            if (dx * dx + dz * dz > 0.0001) {
+              editorState.draft.push([vertexHit.point[0], vertexHit.point[1]]);
+            }
             addPolylineFromDraft();
             return;
           }
@@ -8156,8 +8256,17 @@ function getRoadLineStyle(type) {
           if (editorState.draft.length > 0) {
             if (mode === 'draw-polyline') {
                 const endpointHit = findNearestLineEndpoint(mapPoint, getEditorHitRadius(16));
+                const vertexHit = findNearestLineVertex(mapPoint, getEditorHitRadius(16));
                 const edgeHit = findNearestLineEdge(mapPoint, getEditorHitRadius(12));
-                if (endpointHit) {
+                const draftStart = editorState.draft[0];
+                const dxStart = draftStart ? (snapped.x - draftStart[0]) : 0;
+                const dzStart = draftStart ? (snapped.z - draftStart[1]) : 0;
+                const closeStart = draftStart && (dxStart * dxStart + dzStart * dzStart) <= getEditorHitRadius(14) * getEditorHitRadius(14);
+                if (closeStart) {
+                  editorState.previewPoint = [draftStart[0], draftStart[1]];
+                } else if (vertexHit) {
+                  editorState.previewPoint = [vertexHit.point[0], vertexHit.point[1]];
+                } else if (endpointHit) {
                   editorState.previewPoint = [endpointHit.point[0], endpointHit.point[1]];
                 } else if (edgeHit) {
                   editorState.previewPoint = [edgeHit.point.x, edgeHit.point.z];
