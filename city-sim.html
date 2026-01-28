@@ -7841,6 +7841,21 @@ function getRoadLineStyle(type) {
       }
 
       if (mode === 'draw-polygon' || mode === 'draw-polyline') {
+        if (mode === 'draw-polyline' && editorState.draft.length >= 2) {
+          const draftStart = editorState.draft[0];
+          const dxStart = draftStart ? (mapPoint.x - draftStart[0]) : 0;
+          const dzStart = draftStart ? (mapPoint.z - draftStart[1]) : 0;
+          const closeStart = draftStart && (dxStart * dxStart + dzStart * dzStart) <= getEditorHitRadius(14) * getEditorHitRadius(14);
+          if (closeStart) {
+            const last = editorState.draft[editorState.draft.length - 1];
+            if (!last || last[0] !== draftStart[0] || last[1] !== draftStart[1]) {
+              editorState.draft.push([draftStart[0], draftStart[1]]);
+            }
+            addPolylineFromDraft();
+            return;
+          }
+        }
+
         const draftHit = findNearestDraftVertex(snapped, getEditorHitRadius(10));
         if (draftHit) {
           editorState.dragging = { mode: 'draft', index: draftHit.index };
@@ -7934,10 +7949,14 @@ function getRoadLineStyle(type) {
           }
 
           const draftStart = editorState.draft[0];
-          const dxStart = draftStart ? (snapped.x - draftStart[0]) : 0;
-          const dzStart = draftStart ? (snapped.z - draftStart[1]) : 0;
+          const dxStart = draftStart ? (mapPoint.x - draftStart[0]) : 0;
+          const dzStart = draftStart ? (mapPoint.z - draftStart[1]) : 0;
           const closeStart = draftStart && (dxStart * dxStart + dzStart * dzStart) <= getEditorHitRadius(14) * getEditorHitRadius(14);
           if (closeStart && editorState.draft.length >= 2) {
+            const last = editorState.draft[editorState.draft.length - 1];
+            if (!last || last[0] !== draftStart[0] || last[1] !== draftStart[1]) {
+              editorState.draft.push([draftStart[0], draftStart[1]]);
+            }
             addPolylineFromDraft();
             return;
           }
@@ -8259,8 +8278,8 @@ function getRoadLineStyle(type) {
                 const vertexHit = findNearestLineVertex(mapPoint, getEditorHitRadius(16));
                 const edgeHit = findNearestLineEdge(mapPoint, getEditorHitRadius(12));
                 const draftStart = editorState.draft[0];
-                const dxStart = draftStart ? (snapped.x - draftStart[0]) : 0;
-                const dzStart = draftStart ? (snapped.z - draftStart[1]) : 0;
+                const dxStart = draftStart ? (mapPoint.x - draftStart[0]) : 0;
+                const dzStart = draftStart ? (mapPoint.z - draftStart[1]) : 0;
                 const closeStart = draftStart && (dxStart * dxStart + dzStart * dzStart) <= getEditorHitRadius(14) * getEditorHitRadius(14);
                 if (closeStart) {
                   editorState.previewPoint = [draftStart[0], draftStart[1]];
