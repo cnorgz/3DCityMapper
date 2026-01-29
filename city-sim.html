@@ -1236,10 +1236,15 @@ function getRoadLineStyle(type) {
     // Disposal helper for cleanup
     function disposeObject3D(root) {
       root.traverse(o => {
-        if (o.geometry) o.geometry.dispose();
+        if (o.geometry && !o.geometry.userData?.shared) o.geometry.dispose();
         if (o.material) {
-          if (Array.isArray(o.material)) o.material.forEach(m => m.dispose());
-          else o.material.dispose();
+          if (Array.isArray(o.material)) {
+            o.material.forEach(m => {
+              if (!m?.userData?.shared) m.dispose();
+            });
+          } else if (!o.material.userData?.shared) {
+            o.material.dispose();
+          }
         }
       });
     }
@@ -2877,7 +2882,7 @@ function getRoadLineStyle(type) {
         const key = keyFor(x, z);
         let node = nodeMap.get(key);
         if (!node) {
-          node = { id: nodes.length, x, z, edges: [] };
+          node = { id: nodes.length, x, z, edges: [], key };
           nodeMap.set(key, node);
           nodes.push(node);
         }
@@ -2914,9 +2919,41 @@ function getRoadLineStyle(type) {
       const kinds = [];
       let current = start;
       let prev = null;
+      const pickEdge = (node, previous) => {
+        const options = node.edges.filter(edge => edge.to !== previous);
+        const candidates = options.length ? options : node.edges;
+        if (!candidates.length) return null;
+        if (!previous || candidates.length === 1) {
+          return candidates[Math.floor(Math.random() * candidates.length)];
+        }
+        const vx = node.x - previous.x;
+        const vz = node.z - previous.z;
+        const vLen = Math.hypot(vx, vz) || 1;
+        const vxn = vx / vLen;
+        const vzn = vz / vLen;
+        let best = candidates[0];
+        let bestScore = Infinity;
+        candidates.forEach(edge => {
+          const wx = edge.to.x - node.x;
+          const wz = edge.to.z - node.z;
+          const wLen = Math.hypot(wx, wz) || 1;
+          const wxn = wx / wLen;
+          const wzn = wz / wLen;
+          const cross = vxn * wzn - vzn * wxn;
+          const dot = vxn * wxn + vzn * wzn;
+          const angle = Math.atan2(cross, dot);
+          const score = Math.abs(angle) + (angle > 0 ? 0.25 : 0);
+          if (score < bestScore - 0.0001) {
+            bestScore = score;
+            best = edge;
+          } else if (Math.abs(score - bestScore) < 0.0001 && Math.random() < 0.35) {
+            best = edge;
+          }
+        });
+        return best;
+      };
       for (let step = 0; step < maxSteps; step++) {
-        const options = current.edges.filter(edge => edge.to !== prev);
-        const edge = options.length ? options[Math.floor(Math.random() * options.length)] : current.edges[0];
+        const edge = pickEdge(current, prev);
         if (!edge) break;
         kinds.push(edge.kind);
         prev = current;
@@ -2925,7 +2962,14 @@ function getRoadLineStyle(type) {
       }
       if (points.length < 2) return null;
       const kind = kinds.includes('ROAD_MAJOR') ? 'ROAD_MAJOR' : 'ROAD_MINOR';
-      return { points, kind };
+      return {
+        points,
+        kind,
+        startKey: start.key,
+        endKey: current.key,
+        startDegree: start.edges.length,
+        endDegree: current.edges.length
+      };
     }
 
     function samplePathAt(path, distance, direction = 1) {
@@ -2996,12 +3040,20 @@ function getRoadLineStyle(type) {
         const rightPath = buildPathData(right);
         if (leftPath && leftPath.total >= TRAFFIC_SETTINGS.minRoadLength) {
           leftPath.kind = kind;
-          leftPath.direction = 1;
+          leftPath.direction = -1;
+          leftPath.startKey = walk.endKey;
+          leftPath.endKey = walk.startKey;
+          leftPath.startDegree = walk.endDegree;
+          leftPath.endDegree = walk.startDegree;
           paths.push(leftPath);
         }
         if (rightPath && rightPath.total >= TRAFFIC_SETTINGS.minRoadLength) {
           rightPath.kind = kind;
-          rightPath.direction = -1;
+          rightPath.direction = 1;
+          rightPath.startKey = walk.startKey;
+          rightPath.endKey = walk.endKey;
+          rightPath.startDegree = walk.startDegree;
+          rightPath.endDegree = walk.endDegree;
           paths.push(rightPath);
         }
       }
@@ -3037,6 +3089,12 @@ function getRoadLineStyle(type) {
       const cycle = Math.max(1, TRAFFIC_SETTINGS.lightCycle);
       const phase = Math.floor(time / cycle) % 2;
       const lightIsRed = phase === 0;
+      const pickNextPath = (currentPath, targetKey) => {
+        if (!targetKey) return null;
+        const candidates = blueprintTraffic.paths.filter(p => p !== currentPath && p.startKey === targetKey);
+        if (candidates.length === 0) return null;
+        return candidates[Math.floor(Math.random() * candidates.length)];
+      };
       if (lights.length > 0) {
         lights.forEach((light) => {
           const mesh = light.lightMesh;
@@ -3078,11 +3136,33 @@ function getRoadLineStyle(type) {
           dist = ((dist % path.total) + path.total) % path.total;
         } else {
           if (dist >= path.total) {
-            dist = path.total;
-            car.userData.direction = -1;
+            if ((path.endDegree ?? 0) <= 1) {
+              dist = path.total;
+              car.userData.direction = -1;
+            } else {
+              const nextPath = pickNextPath(path, path.endKey);
+              if (nextPath) {
+                car.userData.path = nextPath;
+                car.userData.direction = nextPath.direction;
+                car.userData.distance = nextPath.direction >= 0 ? 0 : nextPath.total;
+                return;
+              }
+              dist = 0;
+            }
           } else if (dist <= 0) {
-            dist = 0;
-            car.userData.direction = 1;
+            if ((path.startDegree ?? 0) <= 1) {
+              dist = 0;
+              car.userData.direction = 1;
+            } else {
+              const nextPath = pickNextPath(path, path.startKey);
+              if (nextPath) {
+                car.userData.path = nextPath;
+                car.userData.direction = nextPath.direction;
+                car.userData.distance = nextPath.direction >= 0 ? 0 : nextPath.total;
+                return;
+              }
+              dist = path.total;
+            }
           }
         }
         car.userData.distance = dist;
@@ -4589,6 +4669,57 @@ function getRoadLineStyle(type) {
     const cars = [];
     const warningLights = [];
     const marqueeLights = [];
+    const CAR_ASSETS = {
+      bodyGeo: null,
+      roofGeo: null,
+      wheelGeo: null,
+      headlightGeo: null,
+      wheelMat: null,
+      headlightMat: null,
+      tailMat: null,
+      bodyMats: new Map()
+    };
+
+    function getSharedCarAssets() {
+      if (!CAR_ASSETS.bodyGeo) {
+        CAR_ASSETS.bodyGeo = new THREE.BoxGeometry(8, 3, 4);
+        CAR_ASSETS.bodyGeo.userData.shared = true;
+        CAR_ASSETS.roofGeo = new THREE.BoxGeometry(4, 2, 3.5);
+        CAR_ASSETS.roofGeo.userData.shared = true;
+        CAR_ASSETS.wheelGeo = new THREE.CylinderGeometry(1, 1, 0.5, 12);
+        CAR_ASSETS.wheelGeo.userData.shared = true;
+        CAR_ASSETS.headlightGeo = new THREE.SphereGeometry(0.4, 8, 8);
+        CAR_ASSETS.headlightGeo.userData.shared = true;
+        CAR_ASSETS.wheelMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
+        CAR_ASSETS.wheelMat.userData.shared = true;
+        CAR_ASSETS.headlightMat = new THREE.MeshStandardMaterial({
+          color: 0xffffcc,
+          emissive: 0xffffcc,
+          emissiveIntensity: 0.5
+        });
+        CAR_ASSETS.headlightMat.userData.shared = true;
+        CAR_ASSETS.tailMat = new THREE.MeshStandardMaterial({
+          color: 0xff0000,
+          emissive: 0xff0000,
+          emissiveIntensity: 0.3
+        });
+        CAR_ASSETS.tailMat.userData.shared = true;
+      }
+      return CAR_ASSETS;
+    }
+
+    function getCarBodyMaterial(color) {
+      const assets = getSharedCarAssets();
+      if (assets.bodyMats.has(color)) return assets.bodyMats.get(color);
+      const mat = new THREE.MeshStandardMaterial({
+        color,
+        metalness: 0.6,
+        roughness: 0.4
+      });
+      mat.userData.shared = true;
+      assets.bodyMats.set(color, mat);
+      return mat;
+    }
     
     function createCars() {
       // Create several cars on different roads
@@ -4619,35 +4750,28 @@ function getRoadLineStyle(type) {
     function createCar(color, options = {}) {
       const group = new THREE.Group();
       const isBlueprintCar = !!options.blueprintTraffic;
+      const assets = getSharedCarAssets();
       
       // Car body
-      const bodyGeo = new THREE.BoxGeometry(8, 3, 4);
-      const bodyMat = new THREE.MeshStandardMaterial({ 
-        color,
-        metalness: 0.6,
-        roughness: 0.4
-      });
-      const body = new THREE.Mesh(bodyGeo, bodyMat);
+      const bodyMat = getCarBodyMaterial(color);
+      const body = new THREE.Mesh(assets.bodyGeo, bodyMat);
       body.position.y = 1.5;
       body.castShadow = true;
       group.add(body);
       
       // Car roof
-      const roofGeo = new THREE.BoxGeometry(4, 2, 3.5);
-      const roof = new THREE.Mesh(roofGeo, bodyMat);
+      const roof = new THREE.Mesh(assets.roofGeo, bodyMat);
       roof.position.set(-0.5, 3.5, 0);
       roof.castShadow = true;
       group.add(roof);
       
       // Wheels
-      const wheelGeo = new THREE.CylinderGeometry(1, 1, 0.5, 12);
-      const wheelMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
       const wheelPositions = [
         [2.5, 0.5, 2.2], [2.5, 0.5, -2.2],
         [-2.5, 0.5, 2.2], [-2.5, 0.5, -2.2]
       ];
       wheelPositions.forEach(([x, y, z]) => {
-        const wheel = new THREE.Mesh(wheelGeo, wheelMat);
+        const wheel = new THREE.Mesh(assets.wheelGeo, assets.wheelMat);
         wheel.position.set(x, y, z);
         wheel.rotation.x = Math.PI / 2;
         wheel.castShadow = false;  // Decorative - no shadow
@@ -4655,14 +4779,8 @@ function getRoadLineStyle(type) {
       });
       
       // Headlights (front)
-      const headlightGeo = new THREE.SphereGeometry(0.4, 8, 8);
-      const headlightMat = new THREE.MeshStandardMaterial({ 
-        color: 0xffffcc,
-        emissive: 0xffffcc,
-        emissiveIntensity: 0.5
-      });
-      const hl1 = new THREE.Mesh(headlightGeo, headlightMat);
-      const hl2 = new THREE.Mesh(headlightGeo, headlightMat);
+      const hl1 = new THREE.Mesh(assets.headlightGeo, assets.headlightMat);
+      const hl2 = new THREE.Mesh(assets.headlightGeo, assets.headlightMat);
       hl1.position.set(4.1, 1.5, 1.2);
       hl2.position.set(4.1, 1.5, -1.2);
       hl1.userData.isHeadlight = true;
@@ -4673,13 +4791,8 @@ function getRoadLineStyle(type) {
       headlights.push(hl1, hl2);
       
       // Taillights (back) 
-      const taillightMat = new THREE.MeshStandardMaterial({ 
-        color: 0xff0000,
-        emissive: 0xff0000,
-        emissiveIntensity: 0.3
-      });
-      const tl1 = new THREE.Mesh(headlightGeo, taillightMat);
-      const tl2 = new THREE.Mesh(headlightGeo, taillightMat);
+      const tl1 = new THREE.Mesh(assets.headlightGeo, assets.tailMat);
+      const tl2 = new THREE.Mesh(assets.headlightGeo, assets.tailMat);
       tl1.position.set(-4.1, 1.5, 1.2);
       tl2.position.set(-4.1, 1.5, -1.2);
       group.add(tl1, tl2);
