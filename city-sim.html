@@ -6757,7 +6757,10 @@ function getRoadLineStyle(type) {
           const dz = item.pt[1] - pt[1];
           return (dx * dx + dz * dz) <= minDist2;
         });
-        if (existing) return;
+        if (existing) {
+          if (meta?.junction) existing.meta.junction = true;
+          return;
+        }
         endpoints.push({ pt, meta });
       };
 
@@ -6766,6 +6769,12 @@ function getRoadLineStyle(type) {
           if (!entry?.polyline || entry.polyline.length < 2) return;
           addEndpoint(entry.polyline[0], { layer, index: idx, vertexIndex: 0 });
           addEndpoint(entry.polyline[entry.polyline.length - 1], { layer, index: idx, vertexIndex: entry.polyline.length - 1 });
+          if (Array.isArray(entry.junctions)) {
+            entry.junctions.forEach((junctionIndex) => {
+              const pt = entry.polyline[junctionIndex];
+              if (pt) addEndpoint(pt, { layer, index: idx, vertexIndex: junctionIndex, junction: true });
+            });
+          }
         });
       };
 
@@ -6776,8 +6785,9 @@ function getRoadLineStyle(type) {
           editorState.hoverLineEndpoint.layer === item.meta.layer &&
           editorState.hoverLineEndpoint.index === item.meta.index &&
           editorState.hoverLineEndpoint.vertexIndex === item.meta.vertexIndex;
+        const baseColor = item.meta?.junction ? 0xff8a00 : 0xffffff;
         const mat = new THREE.MeshBasicMaterial({
-          color: isHovered ? 0x000000 : 0xffffff,
+          color: isHovered ? 0x000000 : baseColor,
           transparent: true,
           opacity: isHovered ? 0.95 : 0.85,
           depthTest: false,
@@ -7720,6 +7730,15 @@ function getRoadLineStyle(type) {
       editorState.junctionBase = null;
     }
 
+    function markJunctionIndex(entry, insertIndex) {
+      if (!entry || !Number.isFinite(insertIndex)) return;
+      if (!Array.isArray(entry.junctions)) entry.junctions = [];
+      entry.junctions = entry.junctions.map(idx => (idx >= insertIndex ? idx + 1 : idx));
+      if (!entry.junctions.includes(insertIndex)) {
+        entry.junctions.push(insertIndex);
+      }
+    }
+
     function insertJunctionAtEdge(edgeHit) {
       if (!edgeHit || !blueprintData) return null;
       const entry = blueprintData?.[edgeHit.layer]?.[edgeHit.index];
@@ -7738,6 +7757,7 @@ function getRoadLineStyle(type) {
       if (Array.isArray(entry.curves)) {
         entry.curves = entry.curves.map(c => (c >= insertIndex ? c + 1 : c));
       }
+      markJunctionIndex(entry, insertIndex);
       return { point: { x: newPoint[0], z: newPoint[1] }, inserted: true };
     }
 
@@ -7768,6 +7788,7 @@ function getRoadLineStyle(type) {
           if (Array.isArray(entry.curves)) {
             entry.curves = entry.curves.map(c => (c >= i + 1 ? c + 1 : c));
           }
+          markJunctionIndex(entry, i + 1);
           i += 1;
         }
       });
