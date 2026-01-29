@@ -2867,10 +2867,18 @@ function getRoadLineStyle(type) {
         total += Math.hypot(dx, dz);
         lengths.push(total);
       }
+      const startDx = points[1][0] - points[0][0];
+      const startDz = points[1][1] - points[0][1];
+      const endDx = points[points.length - 1][0] - points[points.length - 2][0];
+      const endDz = points[points.length - 1][1] - points[points.length - 2][1];
+      const startLen = Math.hypot(startDx, startDz) || 1;
+      const endLen = Math.hypot(endDx, endDz) || 1;
+      const forwardStartDir = { x: startDx / startLen, z: startDz / startLen };
+      const forwardEndDir = { x: endDx / endLen, z: endDz / endLen };
       const dxEnd = points[0][0] - points[points.length - 1][0];
       const dzEnd = points[0][1] - points[points.length - 1][1];
       const closed = Math.hypot(dxEnd, dzEnd) < 5;
-      return { points, lengths, total, closed };
+      return { points, lengths, total, closed, forwardStartDir, forwardEndDir };
     }
 
     function buildRoadGraph(roads) {
@@ -3045,6 +3053,10 @@ function getRoadLineStyle(type) {
           leftPath.endKey = walk.startKey;
           leftPath.startDegree = walk.endDegree;
           leftPath.endDegree = walk.startDegree;
+          if (leftPath.forwardStartDir && leftPath.forwardEndDir) {
+            leftPath.dirAtStart = { x: -leftPath.forwardEndDir.x, z: -leftPath.forwardEndDir.z };
+            leftPath.dirAtEnd = { x: -leftPath.forwardStartDir.x, z: -leftPath.forwardStartDir.z };
+          }
           paths.push(leftPath);
         }
         if (rightPath && rightPath.total >= TRAFFIC_SETTINGS.minRoadLength) {
@@ -3054,6 +3066,10 @@ function getRoadLineStyle(type) {
           rightPath.endKey = walk.endKey;
           rightPath.startDegree = walk.startDegree;
           rightPath.endDegree = walk.endDegree;
+          if (rightPath.forwardStartDir && rightPath.forwardEndDir) {
+            rightPath.dirAtStart = { x: rightPath.forwardStartDir.x, z: rightPath.forwardStartDir.z };
+            rightPath.dirAtEnd = { x: rightPath.forwardEndDir.x, z: rightPath.forwardEndDir.z };
+          }
           paths.push(rightPath);
         }
       }
@@ -3089,10 +3105,28 @@ function getRoadLineStyle(type) {
       const cycle = Math.max(1, TRAFFIC_SETTINGS.lightCycle);
       const phase = Math.floor(time / cycle) % 2;
       const lightIsRed = phase === 0;
-      const pickNextPath = (currentPath, targetKey) => {
+      const pickNextPath = (currentPath, targetKey, currentDir) => {
         if (!targetKey) return null;
         const candidates = blueprintTraffic.paths.filter(p => p !== currentPath && p.startKey === targetKey);
         if (candidates.length === 0) return null;
+        if (!currentDir) return candidates[Math.floor(Math.random() * candidates.length)];
+        let best = null;
+        let bestScore = Infinity;
+        candidates.forEach((path) => {
+          const dir = path.dirAtStart || path.forwardStartDir;
+          if (!dir) return;
+          const dot = currentDir.x * dir.x + currentDir.z * dir.z;
+          if (dot < -0.25) return; // avoid U-turns unless no alternative
+          const cross = currentDir.x * dir.z - currentDir.z * dir.x;
+          const angle = Math.atan2(cross, dot);
+          const score = Math.abs(angle) + (cross > 0 ? 0.2 : 0);
+          if (score < bestScore) {
+            bestScore = score;
+            best = path;
+          }
+        });
+        if (best) return best;
+        // fallback if all candidates were U-turns
         return candidates[Math.floor(Math.random() * candidates.length)];
       };
       if (lights.length > 0) {
@@ -3140,11 +3174,17 @@ function getRoadLineStyle(type) {
               dist = path.total;
               car.userData.direction = -1;
             } else {
-              const nextPath = pickNextPath(path, path.endKey);
+              const currentDir = path.dirAtEnd || path.forwardEndDir;
+              const nextPath = pickNextPath(path, path.endKey, currentDir);
               if (nextPath) {
                 car.userData.path = nextPath;
                 car.userData.direction = nextPath.direction;
                 car.userData.distance = nextPath.direction >= 0 ? 0 : nextPath.total;
+                const nextSample = samplePathAt(nextPath, car.userData.distance, car.userData.direction);
+                if (nextSample) {
+                  car.position.set(nextSample.x, Y.roads + TRAFFIC_SETTINGS.yOffset, nextSample.z);
+                  car.rotation.y = nextSample.rotation;
+                }
                 return;
               }
               dist = 0;
@@ -3154,11 +3194,17 @@ function getRoadLineStyle(type) {
               dist = 0;
               car.userData.direction = 1;
             } else {
-              const nextPath = pickNextPath(path, path.startKey);
+              const currentDir = path.dirAtStart || path.forwardStartDir;
+              const nextPath = pickNextPath(path, path.startKey, currentDir);
               if (nextPath) {
                 car.userData.path = nextPath;
                 car.userData.direction = nextPath.direction;
                 car.userData.distance = nextPath.direction >= 0 ? 0 : nextPath.total;
+                const nextSample = samplePathAt(nextPath, car.userData.distance, car.userData.direction);
+                if (nextSample) {
+                  car.position.set(nextSample.x, Y.roads + TRAFFIC_SETTINGS.yOffset, nextSample.z);
+                  car.rotation.y = nextSample.rotation;
+                }
                 return;
               }
               dist = path.total;
