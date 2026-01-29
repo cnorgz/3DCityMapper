@@ -2825,55 +2825,13 @@ function getRoadLineStyle(type) {
       lightStopRadius: 10
     };
 
-    function buildOffsetPolyline(points, offset, miterLimit = 4) {
+    function buildOffsetPolyline(points, offset, options = {}) {
       if (!points || points.length < 2) return points;
+      if (!offset) return points;
       const half = Math.abs(offset);
-      const sign = offset >= 0 ? 1 : -1;
-      const count = points.length;
-      const segNormals = [];
-      for (let i = 0; i < count - 1; i++) {
-        const [x1, z1] = points[i];
-        const [x2, z2] = points[i + 1];
-        const dx = x2 - x1;
-        const dz = z2 - z1;
-        const len = Math.hypot(dx, dz) || 1;
-        const nx = dz / len;
-        const nz = -dx / len;
-        segNormals.push([nx, nz]);
-      }
-      const out = [];
-      for (let i = 0; i < count; i++) {
-        const [x, z] = points[i];
-        let nx = 0;
-        let nz = 0;
-        if (i === 0) {
-          [nx, nz] = segNormals[0];
-        } else if (i === count - 1) {
-          [nx, nz] = segNormals[count - 2];
-        } else {
-          const [n0x, n0z] = segNormals[i - 1];
-          const [n1x, n1z] = segNormals[i];
-          const mx = n0x + n1x;
-          const mz = n0z + n1z;
-          const mLen = Math.hypot(mx, mz);
-          if (mLen > 0.0001) {
-            const mtx = mx / mLen;
-            const mtz = mz / mLen;
-            const denom = (mtx * n1x + mtz * n1z) || 0.0001;
-            const miterLen = half / denom;
-            if (Math.abs(miterLen) <= miterLimit * half) {
-              nx = mtx;
-              nz = mtz;
-              out.push([x + nx * miterLen * sign, z + nz * miterLen * sign]);
-              continue;
-            }
-          }
-          nx = n1x;
-          nz = n1z;
-        }
-        out.push([x + nx * half * sign, z + nz * half * sign]);
-      }
-      return out;
+      const rails = computeOffsetRails(points, half, options);
+      if (offset >= 0) return rails.left;
+      return rails.right;
     }
 
     function smoothPolyline(points, iterations = 1, alpha = 0.25) {
@@ -3025,12 +2983,10 @@ function getRoadLineStyle(type) {
         const style = getRoadLineStyle(kind);
         const width = style.width;
         const laneOffset = Math.max(2.5, width * TRAFFIC_SETTINGS.laneOffsetFactor);
-        const left = buildOffsetPolyline(walk.points, laneOffset, 2);
-        const right = buildOffsetPolyline(walk.points, -laneOffset, 2);
-        const leftSmooth = smoothPolyline(left, 1, 0.25);
-        const rightSmooth = smoothPolyline(right, 1, 0.25);
-        const leftPath = buildPathData(leftSmooth);
-        const rightPath = buildPathData(rightSmooth);
+        const left = buildOffsetPolyline(walk.points, laneOffset, ROAD_JOIN_SETTINGS);
+        const right = buildOffsetPolyline(walk.points, -laneOffset, ROAD_JOIN_SETTINGS);
+        const leftPath = buildPathData(left);
+        const rightPath = buildPathData(right);
         if (leftPath && leftPath.total >= TRAFFIC_SETTINGS.minRoadLength) {
           leftPath.kind = kind;
           leftPath.direction = 1;
