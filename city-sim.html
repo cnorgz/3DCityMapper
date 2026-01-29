@@ -2963,6 +2963,13 @@ function getRoadLineStyle(type) {
       resetGroup(blueprintTraffic.group);
       blueprintTraffic.cars = [];
       blueprintTraffic.paths = [];
+      if (Array.isArray(headlights) && headlights.length > 0) {
+        for (let i = headlights.length - 1; i >= 0; i--) {
+          if (headlights[i]?.userData?.blueprintTraffic) {
+            headlights.splice(i, 1);
+          }
+        }
+      }
     }
 
     function rebuildBlueprintTraffic() {
@@ -3005,7 +3012,7 @@ function getRoadLineStyle(type) {
       blueprintTraffic.paths.forEach(path => {
         if (spawned >= maxCars) return;
         const color = COLORS.cars?.[Math.floor(Math.random() * COLORS.cars.length)] ?? 0xff3333;
-        const car = createCar(color);
+        const car = createCar(color, { blueprintTraffic: true });
         car.userData.blueprintTraffic = true;
         car.userData.path = path;
         car.userData.distance = Math.random() * path.total;
@@ -4609,8 +4616,9 @@ function getRoadLineStyle(type) {
       });
     }
     
-    function createCar(color) {
+    function createCar(color, options = {}) {
       const group = new THREE.Group();
+      const isBlueprintCar = !!options.blueprintTraffic;
       
       // Car body
       const bodyGeo = new THREE.BoxGeometry(8, 3, 4);
@@ -4659,6 +4667,8 @@ function getRoadLineStyle(type) {
       hl2.position.set(4.1, 1.5, -1.2);
       hl1.userData.isHeadlight = true;
       hl2.userData.isHeadlight = true;
+      hl1.userData.blueprintTraffic = isBlueprintCar;
+      hl2.userData.blueprintTraffic = isBlueprintCar;
       group.add(hl1, hl2);
       headlights.push(hl1, hl2);
       
