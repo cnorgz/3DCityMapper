@@ -606,6 +606,28 @@
       </select>
       <span></span>
     </div>
+    <label class="toggle-row">
+      <input type="checkbox" id="editorJunctionMode" />
+      <span>Insert Junction</span>
+    </label>
+    <label class="toggle-row">
+      <input type="checkbox" id="editorJunctionAutoSplit" />
+      <span>Auto-split crossings</span>
+    </label>
+    <label class="toggle-row">
+      <input type="checkbox" id="editorDebugRoadOffsets" />
+      <span>Debug: Road Offsets</span>
+    </label>
+    <div class="control-row">
+      <label for="trafficCarCount">Cars</label>
+      <input type="range" id="trafficCarCount" min="0" max="40" step="1" value="12" />
+      <input type="number" id="trafficCarCountValue" min="0" max="40" step="1" value="12" />
+    </div>
+    <div class="control-row">
+      <label for="trafficSpeed">Car Speed</label>
+      <input type="range" id="trafficSpeed" min="0.2" max="3" step="0.1" value="1" />
+      <input type="number" id="trafficSpeedValue" min="0.2" max="3" step="0.1" value="1" />
+    </div>
     <div class="control-row">
       <label for="editorPoiType">POI Type</label>
       <select id="editorPoiType">
@@ -616,6 +638,7 @@
         <option value="WIND_TURBINE">WIND</option>
         <option value="ECOLE">ECOLE</option>
         <option value="SKYSCRAPER">SKY</option>
+        <option value="TRAFFIC_LIGHT">LIGHT</option>
       </select>
       <span></span>
     </div>
@@ -631,6 +654,16 @@
       <label for="editorPixelStep">Pixel Step</label>
       <input type="number" id="editorPixelStep" min="1" step="1" value="10" />
       <span></span>
+    </div>
+    <div class="control-row">
+      <label for="editorZoom">Map Zoom</label>
+      <input type="range" id="editorZoom" min="0.5" max="3" step="0.05" value="1" />
+      <input type="number" id="editorZoomValue" min="0.5" max="3" step="0.05" value="1" />
+    </div>
+    <div class="control-row">
+      <label for="editorHandleScale">Point Size</label>
+      <input type="range" id="editorHandleScale" min="0.4" max="2.5" step="0.05" value="1" />
+      <input type="number" id="editorHandleScaleValue" min="0.4" max="2.5" step="0.05" value="1" />
     </div>
     <div class="overlay-actions">
       <button class="btn" id="editorDelete" style="flex: 1; padding: 6px;">Delete</button>
@@ -683,6 +716,10 @@
         <li>Enter: finish polygon/line. Esc: cancel draft.</li>
         <li>Delete/Backspace: remove hovered draft point or current selection.</li>
         <li>Select tool: click a shape to edit vertices or drag the shape.</li>
+        <li>Roads: enable “Insert Junction” then tap an edge to add a junction.</li>
+        <li>Auto-split crossings: splits other roads that cross a new junction point.</li>
+        <li>Roads: double-click a vertex in Select mode to toggle a curve.</li>
+        <li>Pan map when zoomed (drag); use two fingers on touch.</li>
       </ul>
       <button class="btn" id="closeEditorHelp">Close</button>
     </div>
@@ -813,6 +850,22 @@ Object.values(BLUEPRINT_LAYERS).forEach(g => {
   blueprintRootGroup.add(g);
 });
 
+// Blueprint traffic (Phase 6.1)
+const blueprintTraffic = {
+  group: new THREE.Group(),
+  cars: [],
+  paths: [],
+  lights: []
+};
+blueprintTraffic.group.name = 'BlueprintTraffic';
+
+function ensureBlueprintTrafficGroup() {
+  if (!BLUEPRINT_LAYERS.props.children.includes(blueprintTraffic.group)) {
+    BLUEPRINT_LAYERS.props.add(blueprintTraffic.group);
+  }
+}
+ensureBlueprintTrafficGroup();
+
 // ============================================
 // ZONE REGISTRY
 // ============================================
@@ -909,6 +962,7 @@ let blueprintData = null;
 let blueprintOutlineGroup = null;
 let blueprintMeshGroup = null;
 let blueprintCenterlineGroup = null;
+let blueprintOffsetDebugGroup = null;
 let editorGroup = null;
 let editorDraftLine = null;
 let editorDraftGlowLine = null;
@@ -919,6 +973,7 @@ let editorSelectionRibbon = null;
 let editorVertexGroup = null;
 let editorDraftVertexGroup = null;
 let editorLineEndpointGroup = null;
+let editorJunctionMarkerGroup = null;
 const debugSettings = {
   showGrid: false,
   showOverlayBounds: false,
@@ -926,7 +981,7 @@ const debugSettings = {
   showRoadCenterlines: false
 };
 
-const editorState = {
+  const editorState = {
     enabled: false,
     tool: 'select',
     targetLayer: 'zones',
@@ -943,8 +998,21 @@ const editorState = {
   hover: null,
   hoverDraftIndex: null,
   hoverLineEndpoint: null,
+  hoverJunction: null,
   lastPointerDown: null,
-  hideCity: false
+  hideCity: false,
+  mapZoom: 1,
+  handleScale: 1,
+  junctionMode: false,
+  junctionBase: null,
+  junctionInsertMode: false,
+  junctionAutoSplit: true,
+  debugRoadOffsets: false
+};
+
+const trafficRuntime = {
+  maxCars: 12,
+  speedScale: 1
 };
 
 const editorHistory = {
@@ -955,11 +1023,23 @@ const editorHistory = {
 
 let blueprintCityEnabled = false;
 let blueprintZoneMeshes = [];
-let blueprintLabelGroup = null;
+  let blueprintLabelGroup = null;
+  let editorRebuildRaf = null;
 
 const blueprintPreviewSettings = {
   opacity: 1,
   showLabels: false
+};
+
+const panState = {
+  active: false,
+  pending: false,
+  pointerId: null,
+  lastX: 0,
+  lastY: 0,
+  isTouch: false,
+  deferredAction: null,
+  touchPoints: new Map()
 };
 
 const LEGEND_LINE_COLORS = {
@@ -1049,7 +1129,8 @@ const POI_COLORS = {
   PORT: 0x55a6ff,
   WIND_TURBINE: 0xaad1ff,
   ECOLE: 0xffc857,
-  SKYSCRAPER: 0xffcc33
+  SKYSCRAPER: 0xffcc33,
+  TRAFFIC_LIGHT: 0xff3b3b
 };
 
 const ROAD_LINE_STYLES = {
@@ -1155,10 +1236,15 @@ function getRoadLineStyle(type) {
     // Disposal helper for cleanup
     function disposeObject3D(root) {
       root.traverse(o => {
-        if (o.geometry) o.geometry.dispose();
+        if (o.geometry && !o.geometry.userData?.shared) o.geometry.dispose();
         if (o.material) {
-          if (Array.isArray(o.material)) o.material.forEach(m => m.dispose());
-          else o.material.dispose();
+          if (Array.isArray(o.material)) {
+            o.material.forEach(m => {
+              if (!m?.userData?.shared) m.dispose();
+            });
+          } else if (!o.material.userData?.shared) {
+            o.material.dispose();
+          }
         }
       });
     }
@@ -1236,6 +1322,9 @@ function getRoadLineStyle(type) {
       }
       if (blueprintCenterlineGroup) {
         blueprintCenterlineGroup.visible = allowed && debugSettings.showRoadCenterlines;
+      }
+      if (blueprintOffsetDebugGroup) {
+        blueprintOffsetDebugGroup.visible = allowed && editorState.debugRoadOffsets;
       }
     }
 
@@ -1320,6 +1409,10 @@ function getRoadLineStyle(type) {
       blueprintCenterlineGroup = new THREE.Group();
       blueprintCenterlineGroup.name = 'RoadCenterlines';
       mapOverlayGroup.add(blueprintCenterlineGroup);
+
+      blueprintOffsetDebugGroup = new THREE.Group();
+      blueprintOffsetDebugGroup.name = 'RoadOffsetDebug';
+      mapOverlayGroup.add(blueprintOffsetDebugGroup);
     }
 
     function normalizeBlueprintData(data) {
@@ -1633,6 +1726,7 @@ function getRoadLineStyle(type) {
       resetGroup(blueprintMeshGroup);
       if (blueprintLabelGroup) resetGroup(blueprintLabelGroup);
       if (blueprintCenterlineGroup) resetGroup(blueprintCenterlineGroup);
+      if (blueprintOffsetDebugGroup) resetGroup(blueprintOffsetDebugGroup);
 
       const lineOpacity = blueprintPreviewSettings.opacity;
       const baseOutlineMat = new THREE.LineBasicMaterial({ color: 0x00f0ff, transparent: true, opacity: lineOpacity });
@@ -1727,16 +1821,54 @@ function getRoadLineStyle(type) {
           if (outline) blueprintOutlineGroup.add(outline);
           return;
         }
-        if (!entry.polyline || entry.polyline.length < 2) return;
+        const renderPoints = getRenderPolylinePoints(entry);
+        if (!renderPoints || renderPoints.length < 2) return;
         const kind = getLineKind(entry);
-        const pts = entry.polyline.map(p => new THREE.Vector3(p[0], Y.overlay + 0.055, p[1]));
+        const style = getRoadLineStyle(kind);
+        const width = Number.isFinite(entry.width) ? entry.width : style.width;
+        if (editorState.debugRoadOffsets && !isTransitKind(kind) && blueprintOffsetDebugGroup) {
+          const rails = computeOffsetRails(renderPoints, width / 2, {
+            roundSegments: ROAD_JOIN_SETTINGS.roundSegments,
+            minAngle: ROAD_JOIN_SETTINGS.minAngle,
+            maxAngle: ROAD_JOIN_SETTINGS.maxAngle
+          });
+          const leftPts = rails.left.map(p => new THREE.Vector3(p[0], Y.overlay + 0.09, p[1]));
+          const rightPts = rails.right.map(p => new THREE.Vector3(p[0], Y.overlay + 0.09, p[1]));
+          const leftGeom = new THREE.BufferGeometry().setFromPoints(leftPts);
+          const rightGeom = new THREE.BufferGeometry().setFromPoints(rightPts);
+          const leftMat = new THREE.LineBasicMaterial({ color: 0x44ff88, transparent: true, opacity: 0.9 });
+          const rightMat = new THREE.LineBasicMaterial({ color: 0xff4dd2, transparent: true, opacity: 0.9 });
+          const leftLine = new THREE.Line(leftGeom, leftMat);
+          const rightLine = new THREE.Line(rightGeom, rightMat);
+          leftLine.renderOrder = 1002;
+          rightLine.renderOrder = 1002;
+          blueprintOffsetDebugGroup.add(leftLine);
+          blueprintOffsetDebugGroup.add(rightLine);
+
+          const modeColor = (mode) => {
+            if (mode === 'ROUND') return 0x55ff55;
+            if (mode === 'STRAIGHT') return 0x66bbff;
+            if (mode === 'SPLIT') return 0xff5a5a;
+            if (mode === 'CAP') return 0xffd65a;
+            return 0xffffff;
+          };
+          const dotGeo = new THREE.SphereGeometry(2.6, 10, 10);
+          rails.center.forEach((pt, idx) => {
+            const join = rails.joins[idx] || {};
+            const color = modeColor(join.mode);
+            const dot = new THREE.Mesh(dotGeo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.95, depthTest: false }));
+            dot.position.set(pt[0], Y.overlay + 0.095, pt[1]);
+            dot.renderOrder = 1004;
+            blueprintOffsetDebugGroup.add(dot);
+          });
+        }
+        const pts = renderPoints.map(p => new THREE.Vector3(p[0], Y.overlay + 0.055, p[1]));
         const geometry = new THREE.BufferGeometry().setFromPoints(pts);
         let mat = null;
         if (isTransitKind(kind)) {
           const style = TRANSIT_STYLES[kind] || TRANSIT_STYLES.METRO;
           mat = new THREE.LineBasicMaterial({ color: style.color });
         } else {
-          const style = getRoadLineStyle(kind);
           mat = new THREE.LineBasicMaterial({ color: style.outline, transparent: true, opacity: lineOpacity });
         }
         mat.depthTest = false;
@@ -1859,11 +1991,13 @@ function getRoadLineStyle(type) {
     function clearBlueprintCity() {
       Object.values(BLUEPRINT_LAYERS).forEach(group => resetGroup(group));
       blueprintZoneMeshes = [];
+      ensureBlueprintTrafficGroup();
     }
 
     function buildBlueprintCity(data) {
       if (!data) return;
       clearBlueprintCity();
+      blueprintTraffic.lights = [];
 
       const waterMat = new THREE.MeshStandardMaterial({
         color: COLORS.sea,
@@ -1941,7 +2075,9 @@ function getRoadLineStyle(type) {
           if (mesh) BLUEPRINT_LAYERS.roads.add(mesh);
         } else if (entry.polyline) {
           const kind = getLineKind(entry);
-          const roadPoints = toWorldPolyline(entry.polyline, 1);
+          const renderPoints = getRenderPolylinePoints(entry);
+          if (!renderPoints || renderPoints.length < 2) return;
+          const roadPoints = toWorldPolyline(renderPoints, 1);
           if (isTransitKind(kind)) {
             const style = TRANSIT_STYLES[kind] || TRANSIT_STYLES.METRO;
             const tube = createTransitTube(roadPoints, style.radius, style.color);
@@ -1973,7 +2109,7 @@ function getRoadLineStyle(type) {
           if (USE_RIBBON_ROADS) {
             const ribbonMat = getRoadMaterial(style.color);
             const ribbon = createRibbonRoadMesh(roadPoints, width, ribbonMat, Y.roads + (style.yOffset ?? 0), {
-              miterLimit: 4
+              miterLimit: 2.5
             });
             if (ribbon) BLUEPRINT_LAYERS.roads.add(ribbon);
             if (style.dash) {
@@ -2044,6 +2180,13 @@ function getRoadLineStyle(type) {
         marker.position.set(entry.position[0], Y.buildings + 3, entry.position[1]);
         marker.userData = { type: entry.type };
         BLUEPRINT_LAYERS.props.add(marker);
+        if (entry.type === 'TRAFFIC_LIGHT') {
+          blueprintTraffic.lights.push({
+            position: entry.position,
+            marker,
+            lightMesh: marker.userData?.lightMesh || null
+          });
+        }
       });
     }
 
@@ -2058,9 +2201,10 @@ function getRoadLineStyle(type) {
       const roadLines = (data.roads || [])
         .filter(entry => entry.polyline)
         .map(entry => ({
-          points: entry.polyline,
+          points: getRenderPolylinePoints(entry),
           width: Number.isFinite(entry.width) ? entry.width : getRoadLineStyle(entry.type).width
-        }));
+        }))
+        .filter(line => line.points && line.points.length >= 2);
 
       parkZones.forEach(zone => {
         const points = getRenderPolygonPoints(zone);
@@ -2110,9 +2254,10 @@ function getRoadLineStyle(type) {
         });
         centerlineMat.depthTest = false;
         (data.roads || []).forEach(entry => {
-          if (!entry.polyline || entry.polyline.length < 2) return;
+          const renderPoints = getRenderPolylinePoints(entry);
+          if (!renderPoints || renderPoints.length < 2) return;
           if (isTransitKind(getLineKind(entry))) return;
-          const pts = entry.polyline.map(p => new THREE.Vector3(p[0], Y.overlay + 0.06, p[1]));
+          const pts = renderPoints.map(p => new THREE.Vector3(p[0], Y.overlay + 0.06, p[1]));
           const geometry = new THREE.BufferGeometry().setFromPoints(pts);
           const line = new THREE.Line(geometry, centerlineMat.clone());
           line.renderOrder = 999;
@@ -2122,9 +2267,11 @@ function getRoadLineStyle(type) {
     }
 
     function rebuildBlueprintCity() {
-      if (!blueprintCityEnabled) return;
       if (!blueprintData) return;
-      buildBlueprintCity(blueprintData);
+      if (blueprintCityEnabled) {
+        buildBlueprintCity(blueprintData);
+      }
+      rebuildBlueprintTraffic();
       setCityLayerVisibility();
     }
 
@@ -2330,10 +2477,158 @@ function getRoadLineStyle(type) {
       return points.map(([x, z]) => [x, z * zSign]);
     }
 
+    function cleanPolylinePoints(points, eps = 0.5, colinearEps = 0.001) {
+      if (!points || points.length < 2) return points || [];
+      const out = [points[0]];
+      for (let i = 1; i < points.length; i++) {
+        const prev = out[out.length - 1];
+        const p = points[i];
+        const dx = p[0] - prev[0];
+        const dz = p[1] - prev[1];
+        if (dx * dx + dz * dz > eps * eps) out.push(p);
+      }
+      if (out.length <= 2) return out;
+      const trimmed = [out[0]];
+      for (let i = 1; i < out.length - 1; i++) {
+        const a = out[i - 1];
+        const b = out[i];
+        const c = out[i + 1];
+        const abx = b[0] - a[0];
+        const abz = b[1] - a[1];
+        const bcx = c[0] - b[0];
+        const bcz = c[1] - b[1];
+        const abLen = Math.hypot(abx, abz) || 1;
+        const bcLen = Math.hypot(bcx, bcz) || 1;
+        const abxN = abx / abLen;
+        const abzN = abz / abLen;
+        const bcxN = bcx / bcLen;
+        const bczN = bcz / bcLen;
+        const cross = abxN * bczN - abzN * bcxN;
+        const dot = abxN * bcxN + abzN * bczN;
+        if (Math.abs(cross) < colinearEps && dot > 0.999) continue;
+        trimmed.push(b);
+      }
+      trimmed.push(out[out.length - 1]);
+      return trimmed;
+    }
+
+    function lineIntersection(p, d, q, e) {
+      const denom = d[0] * e[1] - d[1] * e[0];
+      if (Math.abs(denom) < 1e-6) return null;
+      const t = ((q[0] - p[0]) * e[1] - (q[1] - p[1]) * e[0]) / denom;
+      return [p[0] + d[0] * t, p[1] + d[1] * t];
+    }
+
+    const ROAD_JOIN_SETTINGS = {
+      roundSegments: 5,
+      minAngle: Math.PI / 18,
+      maxAngle: Math.PI * 0.9
+    };
+
+    function computeOffsetRails(points, half, options = {}) {
+      const opts = (typeof options === 'number') ? ROAD_JOIN_SETTINGS : { ...ROAD_JOIN_SETTINGS, ...options };
+      const pts = cleanPolylinePoints(points);
+      if (pts.length < 2) return { left: [], right: [], center: [], joins: [], clean: pts };
+
+      const segs = [];
+      for (let i = 0; i < pts.length - 1; i++) {
+        const a = pts[i];
+        const b = pts[i + 1];
+        const dx = b[0] - a[0];
+        const dz = b[1] - a[1];
+        const len = Math.hypot(dx, dz) || 1;
+        const tx = dx / len;
+        const tz = dz / len;
+        const nx = tz;
+        const nz = -tx;
+        segs.push({ tx, tz, nx, nz });
+      }
+
+      const left = [];
+      const right = [];
+      const center = [];
+      const joins = [];
+
+      const pushPair = (lx, lz, rx, rz, mode = 'ROUND') => {
+        if (left.length > 0) {
+          const prevL = left[left.length - 1];
+          const prevR = right[right.length - 1];
+          const dxL = prevL[0] - lx;
+          const dzL = prevL[1] - lz;
+          const dxR = prevR[0] - rx;
+          const dzR = prevR[1] - rz;
+          if ((dxL * dxL + dzL * dzL) < 0.0001 && (dxR * dxR + dzR * dzR) < 0.0001) return;
+        }
+        left.push([lx, lz]);
+        right.push([rx, rz]);
+        center.push([(lx + rx) * 0.5, (lz + rz) * 0.5]);
+        joins.push({ mode });
+      };
+
+      const appendArc = (p, n0, n1, turnDir, modeLabel) => {
+        const a0 = Math.atan2(n0[1], n0[0]);
+        const a1 = Math.atan2(n1[1], n1[0]);
+        let delta = a1 - a0;
+        while (delta * turnDir < 0) delta += turnDir * Math.PI * 2;
+        if (Math.abs(delta) > opts.maxAngle) {
+          const lx0 = p[0] + n0[0] * half;
+          const lz0 = p[1] + n0[1] * half;
+          const rx0 = p[0] - n0[0] * half;
+          const rz0 = p[1] - n0[1] * half;
+          const lx1 = p[0] + n1[0] * half;
+          const lz1 = p[1] + n1[1] * half;
+          const rx1 = p[0] - n1[0] * half;
+          const rz1 = p[1] - n1[1] * half;
+          pushPair(lx0, lz0, rx0, rz0, 'SPLIT');
+          pushPair(lx1, lz1, rx1, rz1, 'SPLIT');
+          return;
+        }
+        const steps = Math.max(2, Math.round((Math.abs(delta) / (Math.PI / 2)) * opts.roundSegments));
+        for (let s = 0; s <= steps; s++) {
+          const t = s / steps;
+          const ang = a0 + delta * t;
+          const ox = Math.cos(ang);
+          const oz = Math.sin(ang);
+          const lx = p[0] + ox * half;
+          const lz = p[1] + oz * half;
+          const rx = p[0] - ox * half;
+          const rz = p[1] - oz * half;
+          pushPair(lx, lz, rx, rz, modeLabel);
+        }
+      };
+
+      for (let i = 0; i < pts.length; i++) {
+        const p = pts[i];
+        if (i === 0) {
+          const n = segs[0];
+          pushPair(p[0] + n.nx * half, p[1] + n.nz * half, p[0] - n.nx * half, p[1] - n.nz * half, 'CAP');
+          continue;
+        }
+        if (i === pts.length - 1) {
+          const n = segs[segs.length - 1];
+          pushPair(p[0] + n.nx * half, p[1] + n.nz * half, p[0] - n.nx * half, p[1] - n.nz * half, 'CAP');
+          continue;
+        }
+        const prev = segs[i - 1];
+        const next = segs[i];
+        const dot = prev.tx * next.tx + prev.tz * next.tz;
+        const angle = Math.acos(Math.max(-1, Math.min(1, dot)));
+        if (angle < opts.minAngle) {
+          const n = next;
+          pushPair(p[0] + n.nx * half, p[1] + n.nz * half, p[0] - n.nx * half, p[1] - n.nz * half, 'STRAIGHT');
+          continue;
+        }
+        const cross = prev.tx * next.tz - prev.tz * next.tx;
+        const turnDir = cross >= 0 ? 1 : -1;
+        appendArc(p, [prev.nx, prev.nz], [next.nx, next.nz], turnDir, 'ROUND');
+      }
+
+      return { left, right, center, joins, clean: pts };
+    }
+
     function buildRibbonGeometryFromPolyline(points, width, y = 0, options = {}) {
       if (!points || points.length < 2) return null;
       const half = width / 2;
-      const miterLimit = options.miterLimit ?? 4;
       // Phase 6 debug checklist:
       // - Diagonal road: ribbon preview + final mesh coincide.
       // - Road centerline toggle sits centered on ribbon.
@@ -2341,67 +2636,25 @@ function getRoadLineStyle(type) {
       const positions = [];
       const uvs = [];
       const indices = [];
-      const count = points.length;
-      const segNormals = [];
+      const joinOpts = { ...ROAD_JOIN_SETTINGS, ...(typeof options === 'object' ? options : {}) };
+      const rails = computeOffsetRails(points, half, joinOpts);
+      const count = Math.min(rails.left.length, rails.right.length, rails.center.length);
+      if (count < 2) return null;
       const segLengths = [];
       let totalLength = 0;
-
       for (let i = 0; i < count - 1; i++) {
-        const [x1, z1] = points[i];
-        const [x2, z2] = points[i + 1];
-        const dx = x2 - x1;
-        const dz = z2 - z1;
-        const len = Math.hypot(dx, dz) || 1;
+        const [x1, z1] = rails.center[i];
+        const [x2, z2] = rails.center[i + 1];
+        const len = Math.hypot(x2 - x1, z2 - z1) || 1;
         segLengths.push(len);
         totalLength += len;
-        const nx = -(dz / len);
-        const nz = dx / len;
-        segNormals.push([nx, nz]);
-      }
-
-      const leftRight = [];
-      for (let i = 0; i < count; i++) {
-        const [x, z] = points[i];
-        let nx = 0;
-        let nz = 0;
-        if (i === 0) {
-          [nx, nz] = segNormals[0];
-        } else if (i === count - 1) {
-          [nx, nz] = segNormals[count - 2];
-        } else {
-          const [n0x, n0z] = segNormals[i - 1];
-          const [n1x, n1z] = segNormals[i];
-          const mx = n0x + n1x;
-          const mz = n0z + n1z;
-          const mLen = Math.hypot(mx, mz);
-          if (mLen > 0.0001) {
-            const mtx = mx / mLen;
-            const mtz = mz / mLen;
-            const denom = (mtx * n1x + mtz * n1z) || 0.0001;
-            const miterLen = half / denom;
-            if (Math.abs(miterLen) <= miterLimit * half) {
-              nx = mtx;
-              nz = mtz;
-              leftRight.push([
-                [x + nx * miterLen, z + nz * miterLen],
-                [x - nx * miterLen, z - nz * miterLen]
-              ]);
-              continue;
-            }
-          }
-          nx = n1x;
-          nz = n1z;
-        }
-        leftRight.push([
-          [x + nx * half, z + nz * half],
-          [x - nx * half, z - nz * half]
-        ]);
       }
 
       let acc = 0;
       for (let i = 0; i < count; i++) {
         const u = totalLength > 0 ? acc / totalLength : 0;
-        const [left, right] = leftRight[i];
+        const left = rails.left[i];
+        const right = rails.right[i];
         positions.push(left[0], y, left[1]);
         positions.push(right[0], y, right[1]);
         uvs.push(u, 0);
@@ -2435,6 +2688,39 @@ function getRoadLineStyle(type) {
       mesh.castShadow = false;
       return mesh;
     }
+
+    window.__TEST_RIBBON__ = (opts = {}) => {
+      const angleDeg = Number.isFinite(opts.angleDeg) ? opts.angleDeg : 90;
+      const length = Number.isFinite(opts.length) ? opts.length : 40;
+      const width = Number.isFinite(opts.width) ? opts.width : 8;
+      const rad = (angleDeg * Math.PI) / 180;
+      const p0 = [0, 0];
+      const p1 = [length, 0];
+      const p2 = [length + Math.cos(rad) * length, Math.sin(rad) * length];
+      const geom = buildRibbonGeometryFromPolyline([p0, p1, p2], width, 0, {
+        roundSegments: ROAD_JOIN_SETTINGS.roundSegments,
+        minAngle: ROAD_JOIN_SETTINGS.minAngle,
+        maxAngle: ROAD_JOIN_SETTINGS.maxAngle
+      });
+      if (!geom) return { ok: false, reason: 'no-geometry' };
+      const pos = geom.attributes.position.array;
+      const idx = geom.index.array;
+      let minArea = Infinity;
+      for (let i = 0; i < idx.length; i += 3) {
+        const ia = idx[i] * 3;
+        const ib = idx[i + 1] * 3;
+        const ic = idx[i + 2] * 3;
+        const ax = pos[ia];
+        const az = pos[ia + 2];
+        const bx = pos[ib];
+        const bz = pos[ib + 2];
+        const cx = pos[ic];
+        const cz = pos[ic + 2];
+        const area = Math.abs((bx - ax) * (cz - az) - (bz - az) * (cx - ax)) * 0.5;
+        minArea = Math.min(minArea, area);
+      }
+      return { ok: minArea > 0.0001, minArea, triangles: idx.length / 3 };
+    };
 
     function createRoadSegmentsFromPolyline(points, width = 12, options = {}) {
       const group = new THREE.Group();
@@ -2529,6 +2815,410 @@ function getRoadLineStyle(type) {
       return mesh;
     }
 
+    // ============================================
+    // Phase 6.1 - Blueprint Traffic (prototype)
+    // ============================================
+    const TRAFFIC_SETTINGS = {
+      laneOffsetFactor: 0.25,
+      minRoadLength: 80,
+      maxCars: 24,
+      speedMajor: 45,
+      speedMinor: 30,
+      yOffset: 1.2,
+      smoothSegments: 8,
+      lightCycle: 6,
+      lightStopRadius: 10
+    };
+
+    function buildOffsetPolyline(points, offset, options = {}) {
+      if (!points || points.length < 2) return points;
+      if (!offset) return points;
+      const half = Math.abs(offset);
+      const rails = computeOffsetRails(points, half, options);
+      if (offset >= 0) return rails.left;
+      return rails.right;
+    }
+
+    function smoothPolyline(points, iterations = 1, alpha = 0.25) {
+      if (!points || points.length < 3) return points;
+      let current = points.map(p => [p[0], p[1]]);
+      for (let iter = 0; iter < iterations; iter++) {
+        const next = [current[0]];
+        for (let i = 0; i < current.length - 1; i++) {
+          const p0 = current[i];
+          const p1 = current[i + 1];
+          const q = [p0[0] + (p1[0] - p0[0]) * alpha, p0[1] + (p1[1] - p0[1]) * alpha];
+          const r = [p0[0] + (p1[0] - p0[0]) * (1 - alpha), p0[1] + (p1[1] - p0[1]) * (1 - alpha)];
+          next.push(q, r);
+        }
+        next.push(current[current.length - 1]);
+        current = next;
+      }
+      return current;
+    }
+
+    function buildPathData(points) {
+      if (!points || points.length < 2) return null;
+      const lengths = [0];
+      let total = 0;
+      for (let i = 1; i < points.length; i++) {
+        const dx = points[i][0] - points[i - 1][0];
+        const dz = points[i][1] - points[i - 1][1];
+        total += Math.hypot(dx, dz);
+        lengths.push(total);
+      }
+      const startDx = points[1][0] - points[0][0];
+      const startDz = points[1][1] - points[0][1];
+      const endDx = points[points.length - 1][0] - points[points.length - 2][0];
+      const endDz = points[points.length - 1][1] - points[points.length - 2][1];
+      const startLen = Math.hypot(startDx, startDz) || 1;
+      const endLen = Math.hypot(endDx, endDz) || 1;
+      const forwardStartDir = { x: startDx / startLen, z: startDz / startLen };
+      const forwardEndDir = { x: endDx / endLen, z: endDz / endLen };
+      const dxEnd = points[0][0] - points[points.length - 1][0];
+      const dzEnd = points[0][1] - points[points.length - 1][1];
+      const closed = Math.hypot(dxEnd, dzEnd) < 5;
+      return { points, lengths, total, closed, forwardStartDir, forwardEndDir };
+    }
+
+    function buildRoadGraph(roads) {
+      const nodes = [];
+      const nodeMap = new Map();
+      const eps = 1.5;
+      const keyFor = (x, z) => `${Math.round(x / eps)}|${Math.round(z / eps)}`;
+      const getNode = (x, z) => {
+        const key = keyFor(x, z);
+        let node = nodeMap.get(key);
+        if (!node) {
+          node = { id: nodes.length, x, z, edges: [], key };
+          nodeMap.set(key, node);
+          nodes.push(node);
+        }
+        return node;
+      };
+
+      (roads || []).forEach((entry) => {
+        if (!entry?.polyline || entry.polyline.length < 2) return;
+        const kind = getLineKind(entry);
+        if (isTransitKind(kind) || kind === 'PATH') return;
+        const renderPoints = getRenderPolylinePoints(entry);
+        if (!renderPoints || renderPoints.length < 2) return;
+        for (let i = 0; i < renderPoints.length - 1; i++) {
+          const a = renderPoints[i];
+          const b = renderPoints[i + 1];
+          const nodeA = getNode(a[0], a[1]);
+          const nodeB = getNode(b[0], b[1]);
+          nodeA.edges.push({ to: nodeB, kind });
+          nodeB.edges.push({ to: nodeA, kind });
+        }
+      });
+
+      return { nodes };
+    }
+
+    function buildRandomWalkPolyline(graph, maxSteps = 10) {
+      if (!graph?.nodes || graph.nodes.length === 0) return null;
+      let start = graph.nodes[Math.floor(Math.random() * graph.nodes.length)];
+      if (!start.edges.length) {
+        start = graph.nodes.find(node => node.edges.length > 0);
+      }
+      if (!start || !start.edges.length) return null;
+      const points = [[start.x, start.z]];
+      const kinds = [];
+      let current = start;
+      let prev = null;
+      const pickEdge = (node, previous) => {
+        const options = node.edges.filter(edge => edge.to !== previous);
+        const candidates = options.length ? options : node.edges;
+        if (!candidates.length) return null;
+        if (!previous || candidates.length === 1) {
+          return candidates[Math.floor(Math.random() * candidates.length)];
+        }
+        const vx = node.x - previous.x;
+        const vz = node.z - previous.z;
+        const vLen = Math.hypot(vx, vz) || 1;
+        const vxn = vx / vLen;
+        const vzn = vz / vLen;
+        let best = candidates[0];
+        let bestScore = Infinity;
+        candidates.forEach(edge => {
+          const wx = edge.to.x - node.x;
+          const wz = edge.to.z - node.z;
+          const wLen = Math.hypot(wx, wz) || 1;
+          const wxn = wx / wLen;
+          const wzn = wz / wLen;
+          const cross = vxn * wzn - vzn * wxn;
+          const dot = vxn * wxn + vzn * wzn;
+          const angle = Math.atan2(cross, dot);
+          const score = Math.abs(angle) + (angle > 0 ? 0.25 : 0);
+          if (score < bestScore - 0.0001) {
+            bestScore = score;
+            best = edge;
+          } else if (Math.abs(score - bestScore) < 0.0001 && Math.random() < 0.35) {
+            best = edge;
+          }
+        });
+        return best;
+      };
+      for (let step = 0; step < maxSteps; step++) {
+        const edge = pickEdge(current, prev);
+        if (!edge) break;
+        kinds.push(edge.kind);
+        prev = current;
+        current = edge.to;
+        points.push([current.x, current.z]);
+      }
+      if (points.length < 2) return null;
+      const kind = kinds.includes('ROAD_MAJOR') ? 'ROAD_MAJOR' : 'ROAD_MINOR';
+      return {
+        points,
+        kind,
+        startKey: start.key,
+        endKey: current.key,
+        startDegree: start.edges.length,
+        endDegree: current.edges.length
+      };
+    }
+
+    function samplePathAt(path, distance, direction = 1) {
+      if (!path || !path.points || path.points.length < 2) return null;
+      let dist = distance;
+      if (path.closed && path.total > 0) {
+        dist = ((dist % path.total) + path.total) % path.total;
+      } else {
+        dist = Math.max(0, Math.min(path.total, dist));
+      }
+      let segIndex = 0;
+      while (segIndex < path.lengths.length - 2 && path.lengths[segIndex + 1] < dist) {
+        segIndex += 1;
+      }
+      const segStart = path.lengths[segIndex];
+      const segEnd = path.lengths[segIndex + 1];
+      const segLen = Math.max(0.0001, segEnd - segStart);
+      const t = (dist - segStart) / segLen;
+      const [x1, z1] = path.points[segIndex];
+      const [x2, z2] = path.points[segIndex + 1];
+      let dx = x2 - x1;
+      let dz = z2 - z1;
+      if (direction < 0) {
+        dx = -dx;
+        dz = -dz;
+      }
+      const x = x1 + (x2 - x1) * t;
+      const z = z1 + (z2 - z1) * t;
+      const rotation = Math.atan2(dx, dz) - Math.PI / 2;
+      return { x, z, rotation };
+    }
+
+    function clearBlueprintTraffic() {
+      if (!blueprintTraffic.group) return;
+      resetGroup(blueprintTraffic.group);
+      blueprintTraffic.cars = [];
+      blueprintTraffic.paths = [];
+      if (Array.isArray(headlights) && headlights.length > 0) {
+        for (let i = headlights.length - 1; i >= 0; i--) {
+          if (headlights[i]?.userData?.blueprintTraffic) {
+            headlights.splice(i, 1);
+          }
+        }
+      }
+    }
+
+    function rebuildBlueprintTraffic() {
+      ensureBlueprintTrafficGroup();
+      clearBlueprintTraffic();
+      if (!blueprintCityEnabled || !blueprintData) return;
+
+      const roads = blueprintData.roads || [];
+      const graph = buildRoadGraph(roads);
+      const paths = [];
+      const maxPaths = Math.min(18, graph.nodes.length * 2);
+      let attempts = 0;
+      while (paths.length < maxPaths && attempts < maxPaths * 4) {
+        attempts += 1;
+        const walk = buildRandomWalkPolyline(graph, 10 + Math.floor(Math.random() * 8));
+        if (!walk || walk.points.length < 2) continue;
+        const kind = walk.kind || 'ROAD_MINOR';
+        const style = getRoadLineStyle(kind);
+        const width = style.width;
+        const laneOffset = Math.max(2.5, width * TRAFFIC_SETTINGS.laneOffsetFactor);
+        const left = buildOffsetPolyline(walk.points, laneOffset, ROAD_JOIN_SETTINGS);
+        const right = buildOffsetPolyline(walk.points, -laneOffset, ROAD_JOIN_SETTINGS);
+        const leftPath = buildPathData(left);
+        const rightPath = buildPathData(right);
+        if (leftPath && leftPath.total >= TRAFFIC_SETTINGS.minRoadLength) {
+          leftPath.kind = kind;
+          leftPath.direction = -1;
+          leftPath.startKey = walk.endKey;
+          leftPath.endKey = walk.startKey;
+          leftPath.startDegree = walk.endDegree;
+          leftPath.endDegree = walk.startDegree;
+          if (leftPath.forwardStartDir && leftPath.forwardEndDir) {
+            leftPath.dirAtStart = { x: -leftPath.forwardEndDir.x, z: -leftPath.forwardEndDir.z };
+            leftPath.dirAtEnd = { x: -leftPath.forwardStartDir.x, z: -leftPath.forwardStartDir.z };
+          }
+          paths.push(leftPath);
+        }
+        if (rightPath && rightPath.total >= TRAFFIC_SETTINGS.minRoadLength) {
+          rightPath.kind = kind;
+          rightPath.direction = 1;
+          rightPath.startKey = walk.startKey;
+          rightPath.endKey = walk.endKey;
+          rightPath.startDegree = walk.startDegree;
+          rightPath.endDegree = walk.endDegree;
+          if (rightPath.forwardStartDir && rightPath.forwardEndDir) {
+            rightPath.dirAtStart = { x: rightPath.forwardStartDir.x, z: rightPath.forwardStartDir.z };
+            rightPath.dirAtEnd = { x: rightPath.forwardEndDir.x, z: rightPath.forwardEndDir.z };
+          }
+          paths.push(rightPath);
+        }
+      }
+
+      blueprintTraffic.paths = paths.filter(p => p && p.total >= TRAFFIC_SETTINGS.minRoadLength);
+      let spawned = 0;
+      const maxCars = Math.max(0, Number.isFinite(trafficRuntime.maxCars) ? trafficRuntime.maxCars : TRAFFIC_SETTINGS.maxCars);
+      blueprintTraffic.paths.forEach(path => {
+        if (spawned >= maxCars) return;
+        const color = COLORS.cars?.[Math.floor(Math.random() * COLORS.cars.length)] ?? 0xff3333;
+        const car = createCar(color, { blueprintTraffic: true });
+        car.userData.blueprintTraffic = true;
+        car.userData.path = path;
+        car.userData.distance = Math.random() * path.total;
+        car.userData.direction = Number.isFinite(path.direction) ? path.direction : 1;
+        const baseSpeed = path.kind === 'ROAD_MAJOR' ? TRAFFIC_SETTINGS.speedMajor : TRAFFIC_SETTINGS.speedMinor;
+        car.userData.speed = baseSpeed * (0.7 + Math.random() * 0.6) * trafficRuntime.speedScale;
+        const sample = samplePathAt(path, car.userData.distance, car.userData.direction);
+        if (sample) {
+          car.position.set(sample.x, Y.roads + TRAFFIC_SETTINGS.yOffset, sample.z);
+          car.rotation.y = sample.rotation;
+        }
+        blueprintTraffic.group.add(car);
+        blueprintTraffic.cars.push(car);
+        spawned += 1;
+      });
+    }
+
+    function animateBlueprintTraffic(dt) {
+      if (!blueprintCityEnabled || blueprintTraffic.cars.length === 0) return;
+      const lights = blueprintTraffic.lights || [];
+      const time = performance.now() * 0.001;
+      const cycle = Math.max(1, TRAFFIC_SETTINGS.lightCycle);
+      const phase = Math.floor(time / cycle) % 2;
+      const lightIsRed = phase === 0;
+      const pickNextPath = (currentPath, targetKey, currentDir) => {
+        if (!targetKey) return null;
+        const candidates = blueprintTraffic.paths.filter(p => p !== currentPath && p.startKey === targetKey);
+        if (candidates.length === 0) return null;
+        if (!currentDir) return candidates[Math.floor(Math.random() * candidates.length)];
+        let best = null;
+        let bestScore = Infinity;
+        candidates.forEach((path) => {
+          const dir = path.dirAtStart || path.forwardStartDir;
+          if (!dir) return;
+          const dot = currentDir.x * dir.x + currentDir.z * dir.z;
+          if (dot < -0.25) return; // avoid U-turns unless no alternative
+          const cross = currentDir.x * dir.z - currentDir.z * dir.x;
+          const angle = Math.atan2(cross, dot);
+          const score = Math.abs(angle) + (cross > 0 ? 0.2 : 0);
+          if (score < bestScore) {
+            bestScore = score;
+            best = path;
+          }
+        });
+        if (best) return best;
+        // fallback if all candidates were U-turns
+        return candidates[Math.floor(Math.random() * candidates.length)];
+      };
+      if (lights.length > 0) {
+        lights.forEach((light) => {
+          const mesh = light.lightMesh;
+          if (!mesh || !mesh.material) return;
+          const mat = mesh.material;
+          if (lightIsRed) {
+            mat.color.setHex(0xff3b3b);
+            if (mat.emissive) {
+              mat.emissive.setHex(0xff3b3b);
+              mat.emissiveIntensity = 0.8;
+            }
+          } else {
+            mat.color.setHex(0x4dff64);
+            if (mat.emissive) {
+              mat.emissive.setHex(0x4dff64);
+              mat.emissiveIntensity = 0.8;
+            }
+          }
+        });
+      }
+      blueprintTraffic.cars.forEach(car => {
+        const path = car.userData.path;
+        if (!path || path.total <= 0) return;
+        let speedScale = 1;
+        if (lightIsRed && lights.length > 0) {
+          const stopRadius2 = TRAFFIC_SETTINGS.lightStopRadius * TRAFFIC_SETTINGS.lightStopRadius;
+          for (const light of lights) {
+            const pos = light.position || [];
+            const dx = car.position.x - pos[0];
+            const dz = car.position.z - pos[1];
+            if ((dx * dx + dz * dz) <= stopRadius2) {
+              speedScale = 0;
+              break;
+            }
+          }
+        }
+        let dist = car.userData.distance + car.userData.speed * dt * speedScale * car.userData.direction;
+        if (path.closed) {
+          dist = ((dist % path.total) + path.total) % path.total;
+        } else {
+          if (dist >= path.total) {
+            if ((path.endDegree ?? 0) <= 1) {
+              dist = path.total;
+              car.userData.direction = -1;
+            } else {
+              const currentDir = path.dirAtEnd || path.forwardEndDir;
+              const nextPath = pickNextPath(path, path.endKey, currentDir);
+              if (nextPath) {
+                car.userData.path = nextPath;
+                car.userData.direction = nextPath.direction;
+                car.userData.distance = nextPath.direction >= 0 ? 0 : nextPath.total;
+                const nextSample = samplePathAt(nextPath, car.userData.distance, car.userData.direction);
+                if (nextSample) {
+                  car.position.set(nextSample.x, Y.roads + TRAFFIC_SETTINGS.yOffset, nextSample.z);
+                  car.rotation.y = nextSample.rotation;
+                }
+                return;
+              }
+              dist = 0;
+            }
+          } else if (dist <= 0) {
+            if ((path.startDegree ?? 0) <= 1) {
+              dist = 0;
+              car.userData.direction = 1;
+            } else {
+              const currentDir = path.dirAtStart || path.forwardStartDir;
+              const nextPath = pickNextPath(path, path.startKey, currentDir);
+              if (nextPath) {
+                car.userData.path = nextPath;
+                car.userData.direction = nextPath.direction;
+                car.userData.distance = nextPath.direction >= 0 ? 0 : nextPath.total;
+                const nextSample = samplePathAt(nextPath, car.userData.distance, car.userData.direction);
+                if (nextSample) {
+                  car.position.set(nextSample.x, Y.roads + TRAFFIC_SETTINGS.yOffset, nextSample.z);
+                  car.rotation.y = nextSample.rotation;
+                }
+                return;
+              }
+              dist = path.total;
+            }
+          }
+        }
+        car.userData.distance = dist;
+        const sample = samplePathAt(path, dist, car.userData.direction);
+        if (!sample) return;
+        car.position.set(sample.x, Y.roads + TRAFFIC_SETTINGS.yOffset, sample.z);
+        car.rotation.y = sample.rotation;
+      });
+    }
+
     function getLaneCenterlines(points, offset = 3) {
       if (!points || points.length < 2) return { left: [], right: [] };
       const left = [];
@@ -2540,8 +3230,8 @@ function getRoadLineStyle(type) {
         const dx = next[0] - prev[0];
         const dz = next[1] - prev[1];
         const len = Math.hypot(dx, dz) || 1;
-        const nx = -(dz / len);
-        const nz = dx / len;
+        const nx = dz / len;
+        const nz = -dx / len;
         left.push([points[i][0] + nx * offset, points[i][1] + nz * offset]);
         right.push([points[i][0] - nx * offset, points[i][1] - nz * offset]);
       }
@@ -2677,6 +3367,26 @@ function getRoadLineStyle(type) {
           );
           tower.position.y = 30;
           return tower;
+        }
+        case 'TRAFFIC_LIGHT': {
+          const group = new THREE.Group();
+          const pole = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.6, 0.6, 10, 8),
+            new THREE.MeshStandardMaterial({ color: 0x2c2c2c })
+          );
+          pole.position.y = 5;
+          group.add(pole);
+          const lightMat = new THREE.MeshStandardMaterial({
+            color: 0xff3b3b,
+            emissive: 0xff3b3b,
+            emissiveIntensity: 0.8
+          });
+          const light = new THREE.Mesh(new THREE.SphereGeometry(1.4, 10, 10), lightMat);
+          light.position.set(0, 9, 0);
+          group.add(light);
+          group.userData.trafficLight = true;
+          group.userData.lightMesh = light;
+          return group;
         }
         default: {
           const sphere = new THREE.Mesh(
@@ -4005,6 +4715,57 @@ function getRoadLineStyle(type) {
     const cars = [];
     const warningLights = [];
     const marqueeLights = [];
+    const CAR_ASSETS = {
+      bodyGeo: null,
+      roofGeo: null,
+      wheelGeo: null,
+      headlightGeo: null,
+      wheelMat: null,
+      headlightMat: null,
+      tailMat: null,
+      bodyMats: new Map()
+    };
+
+    function getSharedCarAssets() {
+      if (!CAR_ASSETS.bodyGeo) {
+        CAR_ASSETS.bodyGeo = new THREE.BoxGeometry(8, 3, 4);
+        CAR_ASSETS.bodyGeo.userData.shared = true;
+        CAR_ASSETS.roofGeo = new THREE.BoxGeometry(4, 2, 3.5);
+        CAR_ASSETS.roofGeo.userData.shared = true;
+        CAR_ASSETS.wheelGeo = new THREE.CylinderGeometry(1, 1, 0.5, 12);
+        CAR_ASSETS.wheelGeo.userData.shared = true;
+        CAR_ASSETS.headlightGeo = new THREE.SphereGeometry(0.4, 8, 8);
+        CAR_ASSETS.headlightGeo.userData.shared = true;
+        CAR_ASSETS.wheelMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
+        CAR_ASSETS.wheelMat.userData.shared = true;
+        CAR_ASSETS.headlightMat = new THREE.MeshStandardMaterial({
+          color: 0xffffcc,
+          emissive: 0xffffcc,
+          emissiveIntensity: 0.5
+        });
+        CAR_ASSETS.headlightMat.userData.shared = true;
+        CAR_ASSETS.tailMat = new THREE.MeshStandardMaterial({
+          color: 0xff0000,
+          emissive: 0xff0000,
+          emissiveIntensity: 0.3
+        });
+        CAR_ASSETS.tailMat.userData.shared = true;
+      }
+      return CAR_ASSETS;
+    }
+
+    function getCarBodyMaterial(color) {
+      const assets = getSharedCarAssets();
+      if (assets.bodyMats.has(color)) return assets.bodyMats.get(color);
+      const mat = new THREE.MeshStandardMaterial({
+        color,
+        metalness: 0.6,
+        roughness: 0.4
+      });
+      mat.userData.shared = true;
+      assets.bodyMats.set(color, mat);
+      return mat;
+    }
     
     function createCars() {
       // Create several cars on different roads
@@ -4032,37 +4793,31 @@ function getRoadLineStyle(type) {
       });
     }
     
-    function createCar(color) {
+    function createCar(color, options = {}) {
       const group = new THREE.Group();
+      const isBlueprintCar = !!options.blueprintTraffic;
+      const assets = getSharedCarAssets();
       
       // Car body
-      const bodyGeo = new THREE.BoxGeometry(8, 3, 4);
-      const bodyMat = new THREE.MeshStandardMaterial({ 
-        color,
-        metalness: 0.6,
-        roughness: 0.4
-      });
-      const body = new THREE.Mesh(bodyGeo, bodyMat);
+      const bodyMat = getCarBodyMaterial(color);
+      const body = new THREE.Mesh(assets.bodyGeo, bodyMat);
       body.position.y = 1.5;
       body.castShadow = true;
       group.add(body);
       
       // Car roof
-      const roofGeo = new THREE.BoxGeometry(4, 2, 3.5);
-      const roof = new THREE.Mesh(roofGeo, bodyMat);
+      const roof = new THREE.Mesh(assets.roofGeo, bodyMat);
       roof.position.set(-0.5, 3.5, 0);
       roof.castShadow = true;
       group.add(roof);
       
       // Wheels
-      const wheelGeo = new THREE.CylinderGeometry(1, 1, 0.5, 12);
-      const wheelMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
       const wheelPositions = [
         [2.5, 0.5, 2.2], [2.5, 0.5, -2.2],
         [-2.5, 0.5, 2.2], [-2.5, 0.5, -2.2]
       ];
       wheelPositions.forEach(([x, y, z]) => {
-        const wheel = new THREE.Mesh(wheelGeo, wheelMat);
+        const wheel = new THREE.Mesh(assets.wheelGeo, assets.wheelMat);
         wheel.position.set(x, y, z);
         wheel.rotation.x = Math.PI / 2;
         wheel.castShadow = false;  // Decorative - no shadow
@@ -4070,29 +4825,20 @@ function getRoadLineStyle(type) {
       });
       
       // Headlights (front)
-      const headlightGeo = new THREE.SphereGeometry(0.4, 8, 8);
-      const headlightMat = new THREE.MeshStandardMaterial({ 
-        color: 0xffffcc,
-        emissive: 0xffffcc,
-        emissiveIntensity: 0.5
-      });
-      const hl1 = new THREE.Mesh(headlightGeo, headlightMat);
-      const hl2 = new THREE.Mesh(headlightGeo, headlightMat);
+      const hl1 = new THREE.Mesh(assets.headlightGeo, assets.headlightMat);
+      const hl2 = new THREE.Mesh(assets.headlightGeo, assets.headlightMat);
       hl1.position.set(4.1, 1.5, 1.2);
       hl2.position.set(4.1, 1.5, -1.2);
       hl1.userData.isHeadlight = true;
       hl2.userData.isHeadlight = true;
+      hl1.userData.blueprintTraffic = isBlueprintCar;
+      hl2.userData.blueprintTraffic = isBlueprintCar;
       group.add(hl1, hl2);
       headlights.push(hl1, hl2);
       
       // Taillights (back) 
-      const taillightMat = new THREE.MeshStandardMaterial({ 
-        color: 0xff0000,
-        emissive: 0xff0000,
-        emissiveIntensity: 0.3
-      });
-      const tl1 = new THREE.Mesh(headlightGeo, taillightMat);
-      const tl2 = new THREE.Mesh(headlightGeo, taillightMat);
+      const tl1 = new THREE.Mesh(assets.headlightGeo, assets.tailMat);
+      const tl2 = new THREE.Mesh(assets.headlightGeo, assets.tailMat);
       tl1.position.set(-4.1, 1.5, 1.2);
       tl2.position.set(-4.1, 1.5, -1.2);
       group.add(tl1, tl2);
@@ -5807,6 +6553,10 @@ function getRoadLineStyle(type) {
       editorLineEndpointGroup = new THREE.Group();
       editorLineEndpointGroup.name = 'EditorLineEndpoints';
       editorGroup.add(editorLineEndpointGroup);
+
+      editorJunctionMarkerGroup = new THREE.Group();
+      editorJunctionMarkerGroup.name = 'EditorJunctionMarkers';
+      editorGroup.add(editorJunctionMarkerGroup);
       editorGroup.visible = editorState.enabled;
 
       updateLineResolution(editorDraftLine);
@@ -5824,6 +6574,55 @@ function getRoadLineStyle(type) {
     function updateLineResolution(line) {
       if (!line || !line.material || !line.material.resolution) return;
       line.material.resolution.set(window.innerWidth, window.innerHeight);
+    }
+
+    function canPanMap() {
+      const viewW = (orthoCamera.right - orthoCamera.left) / orthoCamera.zoom;
+      const viewH = (orthoCamera.top - orthoCamera.bottom) / orthoCamera.zoom;
+      return (MAP_WIDTH > viewW + 1) || (MAP_HEIGHT > viewH + 1);
+    }
+
+    function applyPanDelta(dxPx, dyPx) {
+      const viewW = (orthoCamera.right - orthoCamera.left) / orthoCamera.zoom;
+      const viewH = (orthoCamera.top - orthoCamera.bottom) / orthoCamera.zoom;
+      const worldPerPxX = viewW / window.innerWidth;
+      const worldPerPxZ = viewH / window.innerHeight;
+      const dxWorld = -dxPx * worldPerPxX;
+      const dzWorld = -dyPx * worldPerPxZ;
+      orthoCamera.position.x += dxWorld;
+      orthoCamera.position.z += dzWorld;
+      orthoCamera.lookAt(orthoCamera.position.x, 0, orthoCamera.position.z);
+      orthoCamera.updateProjectionMatrix();
+    }
+
+    function applyEditorZoom(value) {
+      const zoom = clampNumber(Number.parseFloat(value), 0.5, 3);
+      editorState.mapZoom = zoom;
+      orthoCamera.zoom = zoom;
+      orthoCamera.updateProjectionMatrix();
+    }
+
+    function applyHandleScale(value) {
+      const scale = clampNumber(Number.parseFloat(value), 0.4, 2.5);
+      editorState.handleScale = scale;
+      updateDraftMarkers();
+      updateSelectionMarkers();
+      updateLineEndpointMarkers();
+    }
+
+    function getEditorHitRadius(base) {
+      const scale = editorState.handleScale || 1;
+      const zoom = editorState.mapZoom || 1;
+      return (base * scale) / zoom;
+    }
+
+    function hideEditorLines() {
+      if (editorDraftLine) editorDraftLine.visible = false;
+      if (editorDraftGlowLine) editorDraftGlowLine.visible = false;
+      if (editorSelectionLine) editorSelectionLine.visible = false;
+      if (editorSelectionGlowLine) editorSelectionGlowLine.visible = false;
+      if (editorDraftRibbon) editorDraftRibbon.visible = false;
+      if (editorSelectionRibbon) editorSelectionRibbon.visible = false;
     }
 
     function setLinePositions(line, points, closed = false) {
@@ -5856,7 +6655,11 @@ function getRoadLineStyle(type) {
         mesh.visible = false;
         return;
       }
-      const geometry = buildRibbonGeometryFromPolyline(points, width, y, { miterLimit: 4 });
+      const geometry = buildRibbonGeometryFromPolyline(points, width, y, {
+        roundSegments: ROAD_JOIN_SETTINGS.roundSegments,
+        minAngle: ROAD_JOIN_SETTINGS.minAngle,
+        maxAngle: ROAD_JOIN_SETTINGS.maxAngle
+      });
       if (!geometry) {
         mesh.visible = false;
         return;
@@ -5901,6 +6704,13 @@ function getRoadLineStyle(type) {
       const typeSelect = document.getElementById('editorTypeCode');
       const poiSelect = document.getElementById('editorPoiType');
       const transitSelect = document.getElementById('editorTransitType');
+      const junctionToggle = document.getElementById('editorJunctionMode');
+      const junctionSplitToggle = document.getElementById('editorJunctionAutoSplit');
+      const debugOffsetsToggle = document.getElementById('editorDebugRoadOffsets');
+      const zoomSlider = document.getElementById('editorZoom');
+      const zoomValue = document.getElementById('editorZoomValue');
+      const scaleSlider = document.getElementById('editorHandleScale');
+      const scaleValue = document.getElementById('editorHandleScaleValue');
       if (toolSelect) toolSelect.value = editorState.tool;
       if (layerSelect) {
         layerSelect.value = editorState.targetLayer;
@@ -5919,6 +6729,21 @@ function getRoadLineStyle(type) {
         transitSelect.disabled = (editorState.tool !== 'polyline');
         transitSelect.value = editorState.transitType;
       }
+      if (junctionToggle) junctionToggle.checked = editorState.junctionInsertMode;
+      if (junctionSplitToggle) junctionSplitToggle.checked = editorState.junctionAutoSplit;
+      if (debugOffsetsToggle) debugOffsetsToggle.checked = editorState.debugRoadOffsets;
+      if (zoomSlider) zoomSlider.value = editorState.mapZoom;
+      if (zoomValue) zoomValue.value = editorState.mapZoom;
+      if (scaleSlider) scaleSlider.value = editorState.handleScale;
+      if (scaleValue) scaleValue.value = editorState.handleScale;
+      const trafficCarSlider = document.getElementById('trafficCarCount');
+      const trafficCarValue = document.getElementById('trafficCarCountValue');
+      const trafficSpeedSlider = document.getElementById('trafficSpeed');
+      const trafficSpeedValue = document.getElementById('trafficSpeedValue');
+      if (trafficCarSlider) trafficCarSlider.value = trafficRuntime.maxCars;
+      if (trafficCarValue) trafficCarValue.value = trafficRuntime.maxCars;
+      if (trafficSpeedSlider) trafficSpeedSlider.value = trafficRuntime.speedScale;
+      if (trafficSpeedValue) trafficSpeedValue.value = trafficRuntime.speedScale;
       updateEditorHeightControls();
     }
 
@@ -6057,7 +6882,8 @@ function getRoadLineStyle(type) {
       const points = editorState.draft;
       if (!points || points.length === 0) return;
 
-      const baseRadius = 5.2;
+      const scale = editorState.handleScale || 1;
+      const baseRadius = 5.2 * scale;
       const lastRadius = baseRadius * 1.3;
       const baseGeo = new THREE.SphereGeometry(baseRadius, 10, 10);
       const lastGeo = new THREE.SphereGeometry(lastRadius, 10, 10);
@@ -6066,7 +6892,8 @@ function getRoadLineStyle(type) {
       points.forEach((pt, idx) => {
         const hovered = editorState.hoverDraftIndex === idx;
         const isLast = idx === lastIndex;
-        const color = hovered ? 0x000000 : 0xffffff;
+        const isJunctionBase = editorState.junctionMode && idx === 0;
+        const color = hovered ? 0x000000 : (isJunctionBase ? 0xff8a00 : 0xffffff);
         const mat = new THREE.MeshBasicMaterial({
           color,
           transparent: true,
@@ -6087,7 +6914,8 @@ function getRoadLineStyle(type) {
       resetGroup(editorLineEndpointGroup);
       if (!editorActive() || editorState.tool !== 'polyline' || !blueprintData) return;
 
-      const sphereGeo = new THREE.SphereGeometry(6.2, 10, 10);
+      const scale = editorState.handleScale || 1;
+      const sphereGeo = new THREE.SphereGeometry(6.2 * scale, 10, 10);
       const endpoints = [];
       const minDist2 = 36;
 
@@ -6098,7 +6926,10 @@ function getRoadLineStyle(type) {
           const dz = item.pt[1] - pt[1];
           return (dx * dx + dz * dz) <= minDist2;
         });
-        if (existing) return;
+        if (existing) {
+          if (meta?.junction) existing.meta.junction = true;
+          return;
+        }
         endpoints.push({ pt, meta });
       };
 
@@ -6107,6 +6938,12 @@ function getRoadLineStyle(type) {
           if (!entry?.polyline || entry.polyline.length < 2) return;
           addEndpoint(entry.polyline[0], { layer, index: idx, vertexIndex: 0 });
           addEndpoint(entry.polyline[entry.polyline.length - 1], { layer, index: idx, vertexIndex: entry.polyline.length - 1 });
+          if (Array.isArray(entry.junctions)) {
+            entry.junctions.forEach((junctionIndex) => {
+              const pt = entry.polyline[junctionIndex];
+              if (pt) addEndpoint(pt, { layer, index: idx, vertexIndex: junctionIndex, junction: true });
+            });
+          }
         });
       };
 
@@ -6117,8 +6954,9 @@ function getRoadLineStyle(type) {
           editorState.hoverLineEndpoint.layer === item.meta.layer &&
           editorState.hoverLineEndpoint.index === item.meta.index &&
           editorState.hoverLineEndpoint.vertexIndex === item.meta.vertexIndex;
+        const baseColor = item.meta?.junction ? 0xff8a00 : 0xffffff;
         const mat = new THREE.MeshBasicMaterial({
-          color: isHovered ? 0x000000 : 0xffffff,
+          color: isHovered ? 0x000000 : baseColor,
           transparent: true,
           opacity: isHovered ? 0.95 : 0.85,
           depthTest: false,
@@ -6128,6 +6966,39 @@ function getRoadLineStyle(type) {
         sphere.position.set(item.pt[0], Y.overlay + 0.12, item.pt[1]);
         sphere.renderOrder = 1003;
         editorLineEndpointGroup.add(sphere);
+      });
+    }
+
+    function updateJunctionMarkers() {
+      if (!editorJunctionMarkerGroup) return;
+      resetGroup(editorJunctionMarkerGroup);
+      if (!editorActive() || !editorState.junctionInsertMode) return;
+      const hover = editorState.hoverJunction;
+      if (!hover || !hover.point) return;
+      const scale = editorState.handleScale || 1;
+      const radius = 6.6 * scale;
+      const mat = new THREE.MeshBasicMaterial({
+        color: 0xff8a00,
+        transparent: true,
+        opacity: 0.95,
+        depthTest: false,
+        depthWrite: false
+      });
+      const geo = new THREE.SphereGeometry(radius, 10, 10);
+      const marker = new THREE.Mesh(geo, mat);
+      marker.position.set(hover.point.x, Y.overlay + 0.135, hover.point.z);
+      marker.renderOrder = 1005;
+      editorJunctionMarkerGroup.add(marker);
+    }
+
+    function scheduleEditorRebuild() {
+      if (editorRebuildRaf) return;
+      editorRebuildRaf = requestAnimationFrame(() => {
+        editorRebuildRaf = null;
+        if (!blueprintData) return;
+        buildBlueprintFromData(blueprintData);
+        rebuildBlueprintCity();
+        updateSelectionMarkers();
       });
     }
 
@@ -6148,15 +7019,15 @@ function getRoadLineStyle(type) {
         return;
       }
       const entry = list[selection.index];
-      const linePoints = entry.polyline ? entry.polyline : getRenderPolygonPoints(entry);
-      if (!linePoints || linePoints.length < 2) return;
+      const renderLinePoints = entry.polyline ? getRenderPolylinePoints(entry) : getRenderPolygonPoints(entry);
+      if (!renderLinePoints || renderLinePoints.length < 2) return;
       const isClosed = !entry.polyline;
 
       const selectionKind = getLineKind(entry);
       const useRibbonSelection = selection.layer === 'roads' && entry.polyline && USE_RIBBON_ROADS && !isTransitKind(selectionKind);
       if (!useRibbonSelection) {
-        setLinePositions(editorSelectionLine, linePoints, isClosed);
-        setLinePositions(editorSelectionGlowLine, linePoints, isClosed);
+        setLinePositions(editorSelectionLine, renderLinePoints, isClosed);
+        setLinePositions(editorSelectionGlowLine, renderLinePoints, isClosed);
       }
 
       if (selection.layer === 'roads') {
@@ -6171,7 +7042,7 @@ function getRoadLineStyle(type) {
         } else if (useRibbonSelection) {
           const style = getRoadLineStyle(kind);
           const width = Number.isFinite(entry.width) ? entry.width : style.width;
-          updateRibbonMesh(editorSelectionRibbon, linePoints, width, getRoadSurfaceY(kind), style.color, 0.65);
+          updateRibbonMesh(editorSelectionRibbon, renderLinePoints, width, getRoadSurfaceY(kind), style.color, 0.65);
           editorSelectionLine.visible = false;
           editorSelectionGlowLine.visible = false;
         } else {
@@ -6211,7 +7082,8 @@ function getRoadLineStyle(type) {
         editorSelectionGlowLine.visible = true;
       }
 
-      const sphereGeo = new THREE.SphereGeometry(6.5, 10, 10);
+      const scale = editorState.handleScale || 1;
+      const sphereGeo = new THREE.SphereGeometry(6.5 * scale, 10, 10);
       const vertexPoints = entry.polyline ? entry.polyline : entry.polygon;
       if (!vertexPoints) return;
       vertexPoints.forEach((pt, idx) => {
@@ -6220,10 +7092,12 @@ function getRoadLineStyle(type) {
           editorState.hover.layer === selection.layer &&
           editorState.hover.index === selection.index &&
           editorState.hover.vertexIndex === idx;
+        const isCurve = entry.polyline && Array.isArray(entry.curves) && entry.curves.includes(idx);
+        const baseColor = isCurve ? 0x6f6f6f : 0xffffff;
         const mat = new THREE.MeshBasicMaterial({
-          color: (isActive || isHovered) ? 0x000000 : 0xffffff,
+          color: (isActive || isHovered) ? 0x000000 : baseColor,
           transparent: true,
-          opacity: (isActive || isHovered) ? 0.95 : 0.9,
+          opacity: (isActive || isHovered) ? 0.95 : (isCurve ? 0.6 : 0.9),
           depthTest: false,
           depthWrite: false
         });
@@ -6316,6 +7190,7 @@ function getRoadLineStyle(type) {
       blueprintData = normalizeBlueprintData(snapshot?.blueprint || {});
       editorState.draft = [];
       editorState.previewPoint = null;
+      clearJunctionMode();
       editorState.hover = null;
       editorState.hoverDraftIndex = null;
       if (snapshot?.selected &&
@@ -6381,7 +7256,7 @@ function getRoadLineStyle(type) {
       const cz = a[1] + abz * clamped;
       const dx = point.x - cx;
       const dz = point.z - cz;
-      return { dist2: dx * dx + dz * dz, closest: { x: cx, z: cz } };
+      return { dist2: dx * dx + dz * dz, closest: { x: cx, z: cz }, t, tClamped: clamped };
     }
 
     function findNearestEdge(point, threshold) {
@@ -6400,7 +7275,7 @@ function getRoadLineStyle(type) {
             const b = points[(i + 1) % points.length];
             const res = distancePointToSegment(point, a, b);
             if (res.dist2 < thresh2 && (!best || res.dist2 < best.dist2)) {
-              best = { layer, index: idx, segmentIndex: i + 1, dist2: res.dist2, point: res.closest };
+              best = { layer, index: idx, segmentIndex: i + 1, segmentStart: i, dist2: res.dist2, point: res.closest, t: res.tClamped };
             }
           }
         });
@@ -6420,7 +7295,7 @@ function getRoadLineStyle(type) {
         const b = points[(i + 1) % points.length];
         const res = distancePointToSegment(point, a, b);
         if (res.dist2 < thresh2 && (!best || res.dist2 < best.dist2)) {
-          best = { segmentIndex: i + 1, dist2: res.dist2, point: res.closest };
+          best = { segmentIndex: i + 1, segmentStart: i, dist2: res.dist2, point: res.closest, t: res.tClamped };
         }
       }
       return best;
@@ -6447,23 +7322,106 @@ function getRoadLineStyle(type) {
       return best;
     }
 
+    function findNearestLineVertex(point, threshold) {
+      if (!blueprintData) return null;
+      const thresh2 = threshold * threshold;
+      let best = null;
+      (blueprintData.roads || []).forEach((entry, idx) => {
+        if (!entry?.polyline || entry.polyline.length < 2) return;
+        entry.polyline.forEach((pt, vIdx) => {
+          const dx = pt[0] - point.x;
+          const dz = pt[1] - point.z;
+          const d2 = dx * dx + dz * dz;
+          if (d2 < thresh2 && (!best || d2 < best.dist2)) {
+            best = { layer: 'roads', index: idx, vertexIndex: vIdx, dist2: d2, point: [pt[0], pt[1]] };
+          }
+        });
+      });
+      return best;
+    }
+
     function findNearestLineEdge(point, threshold) {
-      const hit = findNearestEdge(point, threshold);
-      if (!hit) return null;
-      const entry = blueprintData?.[hit.layer]?.[hit.index];
-      if (!entry?.polyline) return null;
-      return hit;
+      if (!blueprintData) return null;
+      const thresh2 = threshold * threshold;
+      let best = null;
+      (blueprintData.roads || []).forEach((entry, idx) => {
+        if (!entry?.polyline || entry.polyline.length < 2) return;
+        const points = entry.polyline;
+        for (let i = 0; i < points.length - 1; i++) {
+          const a = points[i];
+          const b = points[i + 1];
+          const res = distancePointToSegment(point, a, b);
+          if (res.dist2 < thresh2 && (!best || res.dist2 < best.dist2)) {
+            const segmentIndex = i + 1;
+            if (!isCurveSegment(entry, segmentIndex)) {
+              best = {
+                layer: 'roads',
+                index: idx,
+                segmentIndex,
+                segmentStart: i,
+                dist2: res.dist2,
+                point: res.closest,
+                t: res.tClamped
+              };
+            }
+          }
+        }
+      });
+      return best;
     }
 
     function isCurveSegment(entry, segmentIndex) {
-      if (!entry?.polygon || !Array.isArray(entry.curves) || entry.curves.length === 0) return false;
-      const count = entry.polygon.length;
+      if (!entry || !Array.isArray(entry.curves) || entry.curves.length === 0) return false;
+      const points = entry.polyline ? entry.polyline : entry.polygon;
+      if (!points || points.length < 2) return false;
+      if (entry.polyline) {
+        const count = points.length;
+        return entry.curves.some((curveIndex) => {
+          if (!Number.isInteger(curveIndex)) return false;
+          if (curveIndex <= 0 || curveIndex >= count - 1) return false;
+          const prevSegment = curveIndex;
+          const nextSegment = curveIndex + 1;
+          return segmentIndex === prevSegment || segmentIndex === nextSegment;
+        });
+      }
+      const count = points.length;
       return entry.curves.some((curveIndex) => {
         if (!Number.isInteger(curveIndex)) return false;
         const prevSegment = curveIndex === 0 ? count : curveIndex;
         const nextSegment = curveIndex + 1 > count ? 1 : curveIndex + 1;
         return segmentIndex === prevSegment || segmentIndex === nextSegment;
       });
+    }
+
+    function getRenderPolylinePoints(entry) {
+      if (!entry?.polyline || entry.polyline.length < 2) return [];
+      const curveSet = new Set(entry.curves || []);
+      if (curveSet.size === 0) return entry.polyline;
+      const points = entry.polyline;
+      const count = points.length;
+      const out = [];
+      const segments = 8;
+
+      for (let i = 0; i < count; i++) {
+        const curr = points[i];
+        if (!curveSet.has(i) || i === 0 || i === count - 1) {
+          out.push(curr);
+          continue;
+        }
+        const prev = points[i - 1];
+        const next = points[i + 1];
+        const curve = new THREE.QuadraticBezierCurve3(
+          new THREE.Vector3(prev[0], 0, prev[1]),
+          new THREE.Vector3(curr[0], 0, curr[1]),
+          new THREE.Vector3(next[0], 0, next[1])
+        );
+        const samples = curve.getPoints(segments);
+        samples.forEach((pt, idx) => {
+          if (idx === 0 && out.length > 0) return;
+          out.push([pt.x, pt.z]);
+        });
+      }
+      return out;
     }
 
     function getRenderPolygonPoints(entry) {
@@ -6516,9 +7474,9 @@ function getRoadLineStyle(type) {
     }
 
     function selectAtPoint(point) {
-      const vertexHit = findNearestVertex(point, 12);
+      const vertexHit = findNearestVertex(point, getEditorHitRadius(12));
       if (vertexHit) return vertexHit;
-      const edgeHit = findNearestEdge(point, 10);
+      const edgeHit = findNearestEdge(point, getEditorHitRadius(10));
       if (edgeHit && edgeHit.layer === 'roads') {
         const entry = blueprintData?.roads?.[edgeHit.index];
         if (entry?.polyline) {
@@ -6533,14 +7491,15 @@ function getRoadLineStyle(type) {
       editorState.hover = null;
       editorState.hoverDraftIndex = null;
       editorState.hoverLineEndpoint = null;
+      editorState.hoverJunction = null;
       const mode = getEditorMode();
       if (mode === 'draw-polygon' || mode === 'draw-polyline') {
-        const draftHit = findNearestDraftVertex(point, 10);
+        const draftHit = findNearestDraftVertex(point, getEditorHitRadius(10));
         if (draftHit) {
           editorState.hoverDraftIndex = draftHit.index;
         }
         if (mode === 'draw-polyline') {
-          const endpointHit = findNearestLineEndpoint(point, 12);
+          const endpointHit = findNearestLineEndpoint(point, getEditorHitRadius(12));
           if (endpointHit) {
             editorState.hoverLineEndpoint = {
               layer: endpointHit.layer,
@@ -6548,12 +7507,18 @@ function getRoadLineStyle(type) {
               vertexIndex: endpointHit.vertexIndex
             };
           }
+          if (editorState.junctionInsertMode) {
+            const edgeHit = findNearestLineEdge(point, getEditorHitRadius(14));
+            if (edgeHit) {
+              editorState.hoverJunction = edgeHit;
+            }
+          }
         }
       }
       if (mode === 'edit') {
         const selected = getSelectedEntry();
         if (selected) {
-          const hit = findNearestVertexInEntry(selected.entry, point, 10);
+          const hit = findNearestVertexInEntry(selected.entry, point, getEditorHitRadius(10));
           if (hit) {
             editorState.hover = {
               layer: selected.layer,
@@ -6566,6 +7531,7 @@ function getRoadLineStyle(type) {
       }
       updateDraftMarkers();
       updateLineEndpointMarkers();
+      updateJunctionMarkers();
     }
 
     function isDoubleClick(point) {
@@ -6632,6 +7598,7 @@ function getRoadLineStyle(type) {
       blueprintData.transit = [];
       editorState.draft = [];
       editorState.previewPoint = null;
+      clearJunctionMode();
       editorState.selected = { layer: 'roads', index: (blueprintData.roads.length - 1), vertexIndex: null };
       buildBlueprintFromData(blueprintData);
       rebuildBlueprintCity();
@@ -6698,12 +7665,23 @@ function getRoadLineStyle(type) {
       const typeSelect = document.getElementById('editorTypeCode');
       const poiSelect = document.getElementById('editorPoiType');
       const transitSelect = document.getElementById('editorTransitType');
+      const junctionToggle = document.getElementById('editorJunctionMode');
+      const junctionSplitToggle = document.getElementById('editorJunctionAutoSplit');
+      const debugOffsetsToggle = document.getElementById('editorDebugRoadOffsets');
+      const trafficCarSlider = document.getElementById('trafficCarCount');
+      const trafficCarValue = document.getElementById('trafficCarCountValue');
+      const trafficSpeedSlider = document.getElementById('trafficSpeed');
+      const trafficSpeedValue = document.getElementById('trafficSpeedValue');
       const heightRange = document.getElementById('editorHeightRange');
       const heightValue = document.getElementById('editorHeightValue');
       const heightApply = document.getElementById('editorHeightApply');
       const snapGridToggle = document.getElementById('editorSnapGrid');
       const snapPixelToggle = document.getElementById('editorSnapPixels');
       const pixelStepInput = document.getElementById('editorPixelStep');
+      const zoomSlider = document.getElementById('editorZoom');
+      const zoomValue = document.getElementById('editorZoomValue');
+      const handleScaleSlider = document.getElementById('editorHandleScale');
+      const handleScaleValue = document.getElementById('editorHandleScaleValue');
       const deleteBtn = document.getElementById('editorDelete');
       const clearBtn = document.getElementById('editorClear');
       const hideCityToggle = document.getElementById('editorHideCity');
@@ -6738,6 +7716,7 @@ function getRoadLineStyle(type) {
         editorState.previewPoint = null;
         updateDraftLine();
       }
+      clearJunctionMode();
           updateEditorUIState();
           updateDraftMarkers();
           updateEditorStatus(`Tool: ${editorState.tool}`);
@@ -6777,6 +7756,47 @@ function getRoadLineStyle(type) {
           updateSelectionMarkers();
         });
       }
+
+      if (junctionToggle) {
+        junctionToggle.checked = editorState.junctionInsertMode;
+        junctionToggle.addEventListener('change', (e) => {
+          editorState.junctionInsertMode = !!e.target.checked;
+          updateEditorStatus(editorState.junctionInsertMode ? 'Junction mode enabled.' : 'Junction mode disabled.');
+        });
+      }
+      if (junctionSplitToggle) {
+        junctionSplitToggle.checked = editorState.junctionAutoSplit;
+        junctionSplitToggle.addEventListener('change', (e) => {
+          editorState.junctionAutoSplit = !!e.target.checked;
+        });
+      }
+      if (debugOffsetsToggle) {
+        debugOffsetsToggle.checked = editorState.debugRoadOffsets;
+        debugOffsetsToggle.addEventListener('change', (e) => {
+          editorState.debugRoadOffsets = !!e.target.checked;
+          buildBlueprintFromData(blueprintData || normalizeBlueprintData({}));
+        });
+      }
+
+      const bindTrafficNumber = (slider, input, onChange) => {
+        if (!slider || !input) return;
+        const apply = (value) => {
+          slider.value = value;
+          input.value = value;
+          onChange(value);
+        };
+        slider.addEventListener('input', (e) => apply(e.target.value));
+        input.addEventListener('input', (e) => apply(e.target.value));
+      };
+
+      bindTrafficNumber(trafficCarSlider, trafficCarValue, (value) => {
+        trafficRuntime.maxCars = Math.max(0, Math.min(40, Number.parseInt(value, 10) || 0));
+        rebuildBlueprintTraffic();
+      });
+
+      bindTrafficNumber(trafficSpeedSlider, trafficSpeedValue, (value) => {
+        trafficRuntime.speedScale = Math.max(0.2, Math.min(3, Number.parseFloat(value) || 1));
+      });
 
       if (heightRange && heightValue) {
         heightRange.addEventListener('input', (e) => {
@@ -6823,6 +7843,20 @@ function getRoadLineStyle(type) {
         });
       }
 
+      const bindLinkedNumber = (slider, input, onChange) => {
+        if (!slider || !input) return;
+        const apply = (value) => {
+          slider.value = value;
+          input.value = value;
+          onChange(value);
+        };
+        slider.addEventListener('input', (e) => apply(e.target.value));
+        input.addEventListener('input', (e) => apply(e.target.value));
+      };
+
+      bindLinkedNumber(zoomSlider, zoomValue, (value) => applyEditorZoom(value));
+      bindLinkedNumber(handleScaleSlider, handleScaleValue, (value) => applyHandleScale(value));
+
       if (deleteBtn) deleteBtn.addEventListener('click', deleteSelection);
 
       if (clearBtn) {
@@ -6830,6 +7864,8 @@ function getRoadLineStyle(type) {
           pushEditorHistory(snapshotEditorState());
           blueprintData = normalizeBlueprintData({});
           editorState.draft = [];
+          editorState.previewPoint = null;
+          clearJunctionMode();
           editorState.selected = null;
           editorState.hover = null;
           editorState.hoverDraftIndex = null;
@@ -6838,6 +7874,7 @@ function getRoadLineStyle(type) {
           updateDraftLine();
           updateDraftMarkers();
           updateSelectionMarkers();
+          hideEditorLines();
           updateEditorStatus('Cleared all blueprint shapes.');
           setBlueprintStatus('Blueprint status: cleared in memory.');
         });
@@ -6853,58 +7890,224 @@ function getRoadLineStyle(type) {
 
       updateDraftMarkers();
       updateEditorUIState();
+      applyEditorZoom(editorState.mapZoom);
+      applyHandleScale(editorState.handleScale);
     }
 
-    function bindEditorEvents() {
-      renderer.domElement.addEventListener('pointerdown', (e) => {
-        if (!editorActive()) return;
-        if (e.button !== 0) return;
+    function clearJunctionMode() {
+      editorState.junctionMode = false;
+      editorState.junctionBase = null;
+    }
 
-        const mapPoint = getPointerMapPoint(e);
-        if (!mapPoint) return;
-        const snapped = snapMapPoint(mapPoint);
-        const mode = getEditorMode();
+    function markJunctionIndex(entry, insertIndex) {
+      if (!entry || !Number.isFinite(insertIndex)) return;
+      if (!Array.isArray(entry.junctions)) entry.junctions = [];
+      entry.junctions = entry.junctions.map(idx => (idx >= insertIndex ? idx + 1 : idx));
+      if (!entry.junctions.includes(insertIndex)) {
+        entry.junctions.push(insertIndex);
+      }
+    }
 
-        if (mode === 'draw-polygon' || mode === 'draw-polyline') {
-          // Draft mode: only draft vertices are interactive.
-          const draftHit = findNearestDraftVertex(snapped, 10);
-          if (draftHit) {
-            editorState.dragging = { mode: 'draft', index: draftHit.index };
+    function insertJunctionAtEdge(edgeHit) {
+      if (!edgeHit || !blueprintData) return null;
+      const entry = blueprintData?.[edgeHit.layer]?.[edgeHit.index];
+      if (!entry?.polyline || entry.polyline.length < 2) return null;
+      if (isCurveSegment(entry, edgeHit.segmentIndex)) return null;
+      const insertIndex = edgeHit.segmentIndex;
+      const points = entry.polyline;
+      const start = points[insertIndex - 1];
+      const end = points[insertIndex];
+      if (!start || !end) return null;
+      const t = Number.isFinite(edgeHit.t) ? edgeHit.t : 0.5;
+      if (t <= 0.02) return { point: { x: start[0], z: start[1] }, inserted: false };
+      if (t >= 0.98) return { point: { x: end[0], z: end[1] }, inserted: false };
+      const newPoint = [edgeHit.point.x, edgeHit.point.z];
+      points.splice(insertIndex, 0, newPoint);
+      if (Array.isArray(entry.curves)) {
+        entry.curves = entry.curves.map(c => (c >= insertIndex ? c + 1 : c));
+      }
+      markJunctionIndex(entry, insertIndex);
+      return { point: { x: newPoint[0], z: newPoint[1] }, inserted: true };
+    }
+
+    function autoSplitRoadCrossings(point, sourceIndex) {
+      if (!point || !blueprintData) return;
+      const px = point.x;
+      const pz = point.z;
+      const radius = Math.max(2.5, getEditorHitRadius(10));
+      const thresh2 = radius * radius;
+      const roads = blueprintData.roads || [];
+      roads.forEach((entry, idx) => {
+        if (!entry?.polyline || entry.polyline.length < 2) return;
+        if (idx === sourceIndex) return;
+        const points = entry.polyline;
+        for (let i = 0; i < points.length - 1; i++) {
+          const a = points[i];
+          const b = points[i + 1];
+          const res = distancePointToSegment({ x: px, z: pz }, a, b);
+          if (res.dist2 > thresh2) continue;
+          if (res.tClamped <= 0.05 || res.tClamped >= 0.95) continue;
+          const exists = points.some(pt => {
+            const dx = pt[0] - px;
+            const dz = pt[1] - pz;
+            return (dx * dx + dz * dz) < 1;
+          });
+          if (exists) return;
+          points.splice(i + 1, 0, [px, pz]);
+          if (Array.isArray(entry.curves)) {
+            entry.curves = entry.curves.map(c => (c >= i + 1 ? c + 1 : c));
+          }
+          markJunctionIndex(entry, i + 1);
+          i += 1;
+        }
+      });
+    }
+
+    function handleEditorPointerDown(snapped, mapPoint, mode, doubleClickOverride = null) {
+      const doubleClick = (typeof doubleClickOverride === 'boolean')
+        ? doubleClickOverride
+        : isDoubleClick(snapped);
+
+      if (editorState.junctionInsertMode && editorState.tool === 'polyline') {
+        const edgeHit = findNearestLineEdge(mapPoint, getEditorHitRadius(14));
+        if (!edgeHit) {
+          updateEditorStatus('Junction mode: tap a road edge.');
+          return;
+        }
+        pushEditorHistory(snapshotEditorState());
+        const result = insertJunctionAtEdge(edgeHit);
+        if (result && result.inserted && editorState.junctionAutoSplit) {
+          autoSplitRoadCrossings(result.point, edgeHit.index);
+        }
+        buildBlueprintFromData(blueprintData);
+        rebuildBlueprintCity();
+        updateSelectionMarkers();
+        updateEditorStatus(result?.inserted ? 'Junction inserted.' : 'Junction snapped to endpoint.');
+        return;
+      }
+
+      if (mode === 'draw-polygon' || mode === 'draw-polyline') {
+        if (mode === 'draw-polyline' && editorState.draft.length >= 2) {
+          const draftStart = editorState.draft[0];
+          const dxStart = draftStart ? (mapPoint.x - draftStart[0]) : 0;
+          const dzStart = draftStart ? (mapPoint.z - draftStart[1]) : 0;
+          const closeStart = draftStart && (dxStart * dxStart + dzStart * dzStart) <= getEditorHitRadius(14) * getEditorHitRadius(14);
+          if (closeStart) {
+            const last = editorState.draft[editorState.draft.length - 1];
+            if (!last || last[0] !== draftStart[0] || last[1] !== draftStart[1]) {
+              editorState.draft.push([draftStart[0], draftStart[1]]);
+            }
+            addPolylineFromDraft();
             return;
           }
+        }
 
-          if (mode === 'draw-polyline') {
-            const endpointHit = findNearestLineEndpoint(mapPoint, 16);
-            const edgeHit = findNearestLineEdge(mapPoint, 12);
-            const doubleClick = isDoubleClick(snapped);
-            if (editorState.draft.length === 0) {
-              if (doubleClick && edgeHit) {
-                const entry = blueprintData?.[edgeHit.layer]?.[edgeHit.index];
-                if (entry?.polyline) {
-                  pushEditorHistory(snapshotEditorState());
-                  entry.polyline.splice(edgeHit.segmentIndex, 0, [edgeHit.point.x, edgeHit.point.z]);
-                  editorState.draft = [[edgeHit.point.x, edgeHit.point.z]];
-                  editorState.selected = { layer: edgeHit.layer, index: edgeHit.index, vertexIndex: edgeHit.segmentIndex };
-                  buildBlueprintFromData(blueprintData);
-                  rebuildBlueprintCity();
-                  updateDraftLine();
-                  updateDraftMarkers();
-                  updateSelectionMarkers();
-                  updateEditorStatus('Junction added. Continue drawing.');
-                  return;
-                }
+        const draftHit = findNearestDraftVertex(snapped, getEditorHitRadius(10));
+        if (draftHit) {
+          editorState.dragging = { mode: 'draft', index: draftHit.index };
+          return;
+        }
+
+        if (mode === 'draw-polyline') {
+          const baseEndpointRadius = doubleClick ? 22 : 16;
+          const baseEdgeRadius = doubleClick ? 24 : 12;
+          const vertexHit = findNearestLineVertex(mapPoint, getEditorHitRadius(baseEndpointRadius));
+          const endpointHit = findNearestLineEndpoint(mapPoint, getEditorHitRadius(baseEndpointRadius));
+          const edgeHit = findNearestLineEdge(mapPoint, getEditorHitRadius(baseEdgeRadius));
+          const edgeEntry = edgeHit ? blueprintData?.[edgeHit.layer]?.[edgeHit.index] : null;
+          const edgeBlocked = edgeEntry ? isCurveSegment(edgeEntry, edgeHit.segmentIndex) : false;
+          const usableEdgeHit = edgeHit && edgeEntry?.polyline && !edgeBlocked;
+
+          if (doubleClick && (endpointHit || usableEdgeHit) && editorState.draft.length <= 1) {
+            editorState.draft = [];
+            if (usableEdgeHit) {
+              pushEditorHistory(snapshotEditorState());
+              if (Array.isArray(edgeEntry.curves)) {
+                edgeEntry.curves = edgeEntry.curves.map(c => (c >= edgeHit.segmentIndex ? c + 1 : c));
               }
-              if (endpointHit) {
-                editorState.draft.push([endpointHit.point[0], endpointHit.point[1]]);
-              } else {
-                editorState.draft.push([snapped.x, snapped.z]);
-              }
+              edgeEntry.polyline.splice(edgeHit.segmentIndex, 0, [edgeHit.point.x, edgeHit.point.z]);
+              editorState.selected = { layer: edgeHit.layer, index: edgeHit.index, vertexIndex: edgeHit.segmentIndex };
+              editorState.draft = [[edgeHit.point.x, edgeHit.point.z]];
+              editorState.junctionMode = true;
+              editorState.junctionBase = [edgeHit.point.x, edgeHit.point.z];
+              buildBlueprintFromData(blueprintData);
+              rebuildBlueprintCity();
+              updateDraftLine();
+              updateDraftMarkers();
+              updateSelectionMarkers();
+              updateEditorStatus('Junction mode: continue drawing.');
+              return;
+            }
+            if (endpointHit) {
+              editorState.draft.push([endpointHit.point[0], endpointHit.point[1]]);
+              editorState.junctionMode = true;
+              editorState.junctionBase = [endpointHit.point[0], endpointHit.point[1]];
               updateDraftLine();
               updateDraftMarkers();
               updateEditorStatus(`Draft points: ${editorState.draft.length}`);
               return;
             }
+          }
 
+          if (editorState.draft.length === 0) {
+            if (doubleClick && (endpointHit || usableEdgeHit)) {
+              if (usableEdgeHit) {
+                pushEditorHistory(snapshotEditorState());
+                if (Array.isArray(edgeEntry.curves)) {
+                  edgeEntry.curves = edgeEntry.curves.map(c => (c >= edgeHit.segmentIndex ? c + 1 : c));
+                }
+                edgeEntry.polyline.splice(edgeHit.segmentIndex, 0, [edgeHit.point.x, edgeHit.point.z]);
+                editorState.selected = { layer: edgeHit.layer, index: edgeHit.index, vertexIndex: edgeHit.segmentIndex };
+                editorState.draft = [[edgeHit.point.x, edgeHit.point.z]];
+                editorState.junctionMode = true;
+                editorState.junctionBase = [edgeHit.point.x, edgeHit.point.z];
+                buildBlueprintFromData(blueprintData);
+                rebuildBlueprintCity();
+                updateDraftLine();
+                updateDraftMarkers();
+                updateSelectionMarkers();
+                updateEditorStatus('Junction mode: continue drawing.');
+                return;
+              }
+              if (endpointHit) {
+                editorState.draft.push([endpointHit.point[0], endpointHit.point[1]]);
+                editorState.junctionMode = true;
+                editorState.junctionBase = [endpointHit.point[0], endpointHit.point[1]];
+                updateDraftLine();
+                updateDraftMarkers();
+                updateEditorStatus(`Draft points: ${editorState.draft.length}`);
+                return;
+              }
+            }
+
+            if (vertexHit) {
+              editorState.draft.push([vertexHit.point[0], vertexHit.point[1]]);
+            } else if (endpointHit) {
+              editorState.draft.push([endpointHit.point[0], endpointHit.point[1]]);
+            } else {
+              editorState.draft.push([snapped.x, snapped.z]);
+            }
+            clearJunctionMode();
+            updateDraftLine();
+            updateDraftMarkers();
+            updateEditorStatus(`Draft points: ${editorState.draft.length}`);
+            return;
+          }
+
+          const draftStart = editorState.draft[0];
+          const dxStart = draftStart ? (mapPoint.x - draftStart[0]) : 0;
+          const dzStart = draftStart ? (mapPoint.z - draftStart[1]) : 0;
+          const closeStart = draftStart && (dxStart * dxStart + dzStart * dzStart) <= getEditorHitRadius(14) * getEditorHitRadius(14);
+          if (closeStart && editorState.draft.length >= 2) {
+            const last = editorState.draft[editorState.draft.length - 1];
+            if (!last || last[0] !== draftStart[0] || last[1] !== draftStart[1]) {
+              editorState.draft.push([draftStart[0], draftStart[1]]);
+            }
+            addPolylineFromDraft();
+            return;
+          }
+
+          if (doubleClick) {
             if (endpointHit) {
               const last = editorState.draft[editorState.draft.length - 1];
               const dx = endpointHit.point[0] - last[0];
@@ -6915,149 +8118,320 @@ function getRoadLineStyle(type) {
               addPolylineFromDraft();
               return;
             }
-
-            if (edgeHit) {
-              const entry = blueprintData?.[edgeHit.layer]?.[edgeHit.index];
-              if (entry?.polyline) {
-                pushEditorHistory(snapshotEditorState());
-                entry.polyline.splice(edgeHit.segmentIndex, 0, [edgeHit.point.x, edgeHit.point.z]);
-                editorState.draft.push([edgeHit.point.x, edgeHit.point.z]);
-                addPolylineFromDraft();
-                return;
+            if (vertexHit) {
+              const last = editorState.draft[editorState.draft.length - 1];
+              const dx = vertexHit.point[0] - last[0];
+              const dz = vertexHit.point[1] - last[1];
+              if (dx * dx + dz * dz > 0.0001) {
+                editorState.draft.push([vertexHit.point[0], vertexHit.point[1]]);
               }
+              addPolylineFromDraft();
+              return;
             }
+            if (usableEdgeHit) {
+              pushEditorHistory(snapshotEditorState());
+              if (Array.isArray(edgeEntry.curves)) {
+                edgeEntry.curves = edgeEntry.curves.map(c => (c >= edgeHit.segmentIndex ? c + 1 : c));
+              }
+              edgeEntry.polyline.splice(edgeHit.segmentIndex, 0, [edgeHit.point.x, edgeHit.point.z]);
+              editorState.draft.push([edgeHit.point.x, edgeHit.point.z]);
+              addPolylineFromDraft();
+              return;
+            }
+            editorState.draft.push([snapped.x, snapped.z]);
+            addPolylineFromDraft();
+            return;
           }
 
-          editorState.draft.push([snapped.x, snapped.z]);
-          updateDraftLine();
-          updateDraftMarkers();
-          updateEditorStatus(`Draft points: ${editorState.draft.length}`);
-          return;
-        }
-
-        if (mode === 'poi') {
-          addPoiAt(snapped);
-          return;
-        }
-
-        if (mode === 'edit') {
-          // Editing: only active shape handles/body are interactive.
-          const selected = getSelectedEntry();
-          if (selected) {
-            const vertexHit = findNearestVertexInEntry(selected.entry, snapped, 10);
-            if (vertexHit) {
-              const historySnapshot = snapshotEditorState();
-              editorState.selected = {
-                layer: selected.layer,
-                index: selected.index,
-                vertexIndex: vertexHit.vertexIndex
-              };
-              updateSelectionMarkers();
-              editorState.dragging = {
-                mode: 'vertex',
-                start: { x: snapped.x, z: snapped.z },
-                original: null,
-                historySnapshot,
-                historyPushed: false,
-                didMove: false
-              };
-              return;
+          if (vertexHit) {
+            const last = editorState.draft[editorState.draft.length - 1];
+            const dx = vertexHit.point[0] - last[0];
+            const dz = vertexHit.point[1] - last[1];
+            if (dx * dx + dz * dz > 0.0001) {
+              editorState.draft.push([vertexHit.point[0], vertexHit.point[1]]);
             }
+            addPolylineFromDraft();
+            return;
+          }
 
-            const edgeHit = findNearestEdgeInEntry(selected.entry, snapped, 12);
-            if (edgeHit) {
-              const points = selected.entry.polyline ? selected.entry.polyline : selected.entry.polygon;
-              if (points) {
-                if (selected.entry.polygon && isCurveSegment(selected.entry, edgeHit.segmentIndex)) {
-                  updateEditorStatus('Curve segment locked. Use the curve handle.');
-                  return;
-                }
-                pushEditorHistory(snapshotEditorState());
-                if (selected.entry.polygon) {
-                  if (!Array.isArray(selected.entry.curves)) selected.entry.curves = [];
-                  selected.entry.curves = selected.entry.curves.map(c => (c >= edgeHit.segmentIndex ? c + 1 : c));
-                  selected.entry.curves.push(edgeHit.segmentIndex);
-                }
-                points.splice(edgeHit.segmentIndex, 0, [edgeHit.point.x, edgeHit.point.z]);
-                editorState.selected = { layer: selected.layer, index: selected.index, vertexIndex: edgeHit.segmentIndex };
-                buildBlueprintFromData(blueprintData);
-                rebuildBlueprintCity();
-                updateSelectionMarkers();
-                editorState.dragging = { mode: 'vertex', start: { x: snapped.x, z: snapped.z }, original: null };
-              }
-              return;
+          if (endpointHit) {
+            const last = editorState.draft[editorState.draft.length - 1];
+            const dx = endpointHit.point[0] - last[0];
+            const dz = endpointHit.point[1] - last[1];
+            if (dx * dx + dz * dz > 0.0001) {
+              editorState.draft.push([endpointHit.point[0], endpointHit.point[1]]);
             }
+            addPolylineFromDraft();
+            return;
+          }
 
-            if (selected.entry.polygon && pointInPolygon(snapped.x, snapped.z, selected.entry.polygon)) {
-              const historySnapshot = snapshotEditorState();
-              editorState.dragging = {
-                mode: 'polygon',
-                start: { x: snapped.x, z: snapped.z },
-                original: selected.entry.polygon.map(p => [p[0], p[1]]),
-                curves: Array.isArray(selected.entry.curves) ? [...selected.entry.curves] : [],
-                isPolyline: false,
-                historySnapshot,
-                historyPushed: false,
-                didMove: false
-              };
-              return;
+          if (usableEdgeHit) {
+            pushEditorHistory(snapshotEditorState());
+            if (Array.isArray(edgeEntry.curves)) {
+              edgeEntry.curves = edgeEntry.curves.map(c => (c >= edgeHit.segmentIndex ? c + 1 : c));
             }
-
-            editorState.selected = null;
-            updateSelectionMarkers();
+            edgeEntry.polyline.splice(edgeHit.segmentIndex, 0, [edgeHit.point.x, edgeHit.point.z]);
+            editorState.draft.push([edgeHit.point.x, edgeHit.point.z]);
+            addPolylineFromDraft();
             return;
           }
         }
 
-        const selection = selectAtPoint(snapped);
-        editorState.selected = selection;
-        updateSelectionMarkers();
+        editorState.draft.push([snapped.x, snapped.z]);
+        clearJunctionMode();
+        updateDraftLine();
+        updateDraftMarkers();
+        updateEditorStatus(`Draft points: ${editorState.draft.length}`);
+        return;
+      }
 
-        if (selection && selection.vertexIndex !== null) {
-          const historySnapshot = snapshotEditorState();
-          editorState.dragging = {
-            mode: 'vertex',
-            start: { x: snapped.x, z: snapped.z },
-            original: null,
-            historySnapshot,
-            historyPushed: false,
-            didMove: false
-          };
-        } else if (selection) {
-          const list = blueprintData?.[selection.layer];
-          const entry = list?.[selection.index];
-          if (entry?.polygon || entry?.polyline) {
+      if (mode === 'poi') {
+        addPoiAt(snapped);
+        return;
+      }
+
+      if (mode === 'edit') {
+        const selected = getSelectedEntry();
+        if (selected) {
+            const vertexHit = findNearestVertexInEntry(selected.entry, snapped, getEditorHitRadius(10));
+          if (vertexHit) {
+            if (selected.entry.polyline && doubleClick) {
+              const points = selected.entry.polyline;
+              const idx = vertexHit.vertexIndex;
+              if (idx > 0 && idx < points.length - 1) {
+                pushEditorHistory(snapshotEditorState());
+                if (!Array.isArray(selected.entry.curves)) selected.entry.curves = [];
+                const existing = selected.entry.curves.indexOf(idx);
+                if (existing >= 0) {
+                  selected.entry.curves.splice(existing, 1);
+                  updateEditorStatus('Curve removed.');
+                } else {
+                  selected.entry.curves.push(idx);
+                  updateEditorStatus('Curve added.');
+                }
+                buildBlueprintFromData(blueprintData);
+                rebuildBlueprintCity();
+                updateSelectionMarkers();
+              }
+              return;
+            }
+
             const historySnapshot = snapshotEditorState();
+            editorState.selected = {
+              layer: selected.layer,
+              index: selected.index,
+              vertexIndex: vertexHit.vertexIndex
+            };
+            updateSelectionMarkers();
             editorState.dragging = {
-              mode: 'polygon',
+              mode: 'vertex',
               start: { x: snapped.x, z: snapped.z },
-              original: (entry.polyline || entry.polygon).map(p => [p[0], p[1]]),
-              curves: Array.isArray(entry.curves) ? [...entry.curves] : [],
-              isPolyline: !!entry.polyline,
+              original: null,
               historySnapshot,
               historyPushed: false,
               didMove: false
             };
+            return;
           }
-        } else {
+
+          const edgeHit = findNearestEdgeInEntry(selected.entry, snapped, getEditorHitRadius(12));
+          if (edgeHit) {
+            const points = selected.entry.polyline ? selected.entry.polyline : selected.entry.polygon;
+            if (points) {
+              if (isCurveSegment(selected.entry, edgeHit.segmentIndex)) {
+                updateEditorStatus('Curve segment locked. Use the curve handle.');
+                return;
+              }
+              pushEditorHistory(snapshotEditorState());
+              if (selected.entry.polygon) {
+                if (!Array.isArray(selected.entry.curves)) selected.entry.curves = [];
+                selected.entry.curves = selected.entry.curves.map(c => (c >= edgeHit.segmentIndex ? c + 1 : c));
+                selected.entry.curves.push(edgeHit.segmentIndex);
+              } else if (selected.entry.polyline && Array.isArray(selected.entry.curves)) {
+                selected.entry.curves = selected.entry.curves.map(c => (c >= edgeHit.segmentIndex ? c + 1 : c));
+              }
+              points.splice(edgeHit.segmentIndex, 0, [edgeHit.point.x, edgeHit.point.z]);
+              editorState.selected = { layer: selected.layer, index: selected.index, vertexIndex: edgeHit.segmentIndex };
+              buildBlueprintFromData(blueprintData);
+              rebuildBlueprintCity();
+              updateSelectionMarkers();
+              editorState.dragging = { mode: 'vertex', start: { x: snapped.x, z: snapped.z }, original: null };
+            }
+            return;
+          }
+
+          if (selected.entry.polygon && pointInPolygon(snapped.x, snapped.z, selected.entry.polygon)) {
+            const historySnapshot = snapshotEditorState();
+            editorState.dragging = {
+              mode: 'polygon',
+              start: { x: snapped.x, z: snapped.z },
+              original: selected.entry.polygon.map(p => [p[0], p[1]]),
+              curves: Array.isArray(selected.entry.curves) ? [...selected.entry.curves] : [],
+              isPolyline: false,
+              historySnapshot,
+              historyPushed: false,
+              didMove: false
+            };
+            return;
+          }
+
           editorState.selected = null;
+          updateSelectionMarkers();
+          return;
         }
+      }
+
+      const selection = selectAtPoint(snapped);
+      editorState.selected = selection;
+      updateSelectionMarkers();
+
+      if (selection && selection.vertexIndex !== null) {
+        const historySnapshot = snapshotEditorState();
+        editorState.dragging = {
+          mode: 'vertex',
+          start: { x: snapped.x, z: snapped.z },
+          original: null,
+          historySnapshot,
+          historyPushed: false,
+          didMove: false
+        };
+      } else if (selection) {
+        const list = blueprintData?.[selection.layer];
+        const entry = list?.[selection.index];
+        if (entry?.polygon || entry?.polyline) {
+          const historySnapshot = snapshotEditorState();
+          editorState.dragging = {
+            mode: 'polygon',
+            start: { x: snapped.x, z: snapped.z },
+            original: (entry.polyline || entry.polygon).map(p => [p[0], p[1]]),
+            curves: Array.isArray(entry.curves) ? [...entry.curves] : [],
+            isPolyline: !!entry.polyline,
+            historySnapshot,
+            historyPushed: false,
+            didMove: false
+          };
+        }
+      } else {
+        editorState.selected = null;
+      }
+    }
+
+    function bindEditorEvents() {
+      renderer.domElement.style.touchAction = 'none';
+      renderer.domElement.addEventListener('pointerdown', (e) => {
+        if (!editorActive()) return;
+        if (e.button !== 0) return;
+
+        if (activeCamera === orthoCamera && e.pointerType === 'touch') {
+          panState.touchPoints.set(e.pointerId, { x: e.clientX, y: e.clientY });
+          if (panState.touchPoints.size >= 2 && canPanMap()) {
+            panState.active = true;
+            panState.isTouch = true;
+            panState.pending = false;
+            const pts = Array.from(panState.touchPoints.values());
+            panState.lastX = (pts[0].x + pts[1].x) / 2;
+            panState.lastY = (pts[0].y + pts[1].y) / 2;
+            renderer.domElement.setPointerCapture(e.pointerId);
+            return;
+          }
+        }
+
+        const mapPoint = getPointerMapPoint(e);
+        if (!mapPoint) return;
+        const snapped = snapMapPoint(mapPoint);
+        const mode = getEditorMode();
+        const doubleClick = isDoubleClick(snapped);
+
+        const canMousePan = (activeCamera === orthoCamera && canPanMap() && e.pointerType === 'mouse');
+        let immediateDrag = false;
+        if (mode === 'draw-polygon' || mode === 'draw-polyline') {
+          immediateDrag = !!findNearestDraftVertex(snapped, 10);
+        } else if (mode === 'edit') {
+          const selected = getSelectedEntry();
+          if (selected) {
+            immediateDrag = !!findNearestVertexInEntry(selected.entry, snapped, 10);
+            if (!immediateDrag) immediateDrag = !!findNearestEdgeInEntry(selected.entry, snapped, 12);
+            if (!immediateDrag && selected.entry.polygon) {
+              immediateDrag = pointInPolygon(snapped.x, snapped.z, selected.entry.polygon);
+            }
+          }
+        } else if (mode === 'select') {
+          immediateDrag = !!findNearestVertex(snapped, 12);
+        }
+
+        if (canMousePan && !immediateDrag) {
+          panState.pending = true;
+          panState.active = false;
+          panState.isTouch = false;
+          panState.pointerId = e.pointerId;
+          panState.lastX = e.clientX;
+          panState.lastY = e.clientY;
+          panState.deferredAction = { snapped, mapPoint, mode, doubleClick };
+          renderer.domElement.setPointerCapture(e.pointerId);
+          return;
+        }
+
+        handleEditorPointerDown(snapped, mapPoint, mode, doubleClick);
       });
 
       renderer.domElement.addEventListener('pointermove', (e) => {
         if (!editorActive()) return;
+
+        if (activeCamera === orthoCamera && e.pointerType === 'touch') {
+          if (panState.touchPoints.has(e.pointerId)) {
+            panState.touchPoints.set(e.pointerId, { x: e.clientX, y: e.clientY });
+          }
+          if (panState.active && panState.isTouch && panState.touchPoints.size >= 2) {
+            const pts = Array.from(panState.touchPoints.values());
+            const cx = (pts[0].x + pts[1].x) / 2;
+            const cy = (pts[0].y + pts[1].y) / 2;
+            const dx = cx - panState.lastX;
+            const dy = cy - panState.lastY;
+            panState.lastX = cx;
+            panState.lastY = cy;
+            applyPanDelta(dx, dy);
+            return;
+          }
+        }
+
+        if (panState.pending && e.pointerType === 'mouse' && e.pointerId === panState.pointerId) {
+          const dx = e.clientX - panState.lastX;
+          const dy = e.clientY - panState.lastY;
+          if (Math.hypot(dx, dy) > 3) {
+            panState.active = true;
+            panState.pending = false;
+          }
+        }
+        if (panState.active && !panState.isTouch && e.pointerId === panState.pointerId) {
+          const dx = e.clientX - panState.lastX;
+          const dy = e.clientY - panState.lastY;
+          panState.lastX = e.clientX;
+          panState.lastY = e.clientY;
+          applyPanDelta(dx, dy);
+          return;
+        }
+
         const mapPoint = getPointerMapPoint(e);
         if (!mapPoint) return;
         const snapped = snapMapPoint(mapPoint);
         const mode = getEditorMode();
 
         if (!editorState.dragging) {
-          if (mode === 'draw-polygon' || mode === 'draw-polyline') {
-            if (editorState.draft.length > 0) {
-              if (mode === 'draw-polyline') {
-                const endpointHit = findNearestLineEndpoint(mapPoint, 16);
-                const edgeHit = findNearestLineEdge(mapPoint, 12);
-                if (endpointHit) {
+        if (mode === 'draw-polygon' || mode === 'draw-polyline') {
+          if (editorState.draft.length > 0) {
+            if (mode === 'draw-polyline') {
+                const endpointHit = findNearestLineEndpoint(mapPoint, getEditorHitRadius(16));
+                const vertexHit = findNearestLineVertex(mapPoint, getEditorHitRadius(16));
+                const edgeHit = findNearestLineEdge(mapPoint, getEditorHitRadius(12));
+                const draftStart = editorState.draft[0];
+                const dxStart = draftStart ? (mapPoint.x - draftStart[0]) : 0;
+                const dzStart = draftStart ? (mapPoint.z - draftStart[1]) : 0;
+                const closeStart = draftStart && (dxStart * dxStart + dzStart * dzStart) <= getEditorHitRadius(14) * getEditorHitRadius(14);
+                if (closeStart) {
+                  editorState.previewPoint = [draftStart[0], draftStart[1]];
+                } else if (vertexHit) {
+                  editorState.previewPoint = [vertexHit.point[0], vertexHit.point[1]];
+                } else if (endpointHit) {
                   editorState.previewPoint = [endpointHit.point[0], endpointHit.point[1]];
                 } else if (edgeHit) {
                   editorState.previewPoint = [edgeHit.point.x, edgeHit.point.z];
@@ -7095,7 +8469,7 @@ function getRoadLineStyle(type) {
         if (editorState.dragging.mode === 'vertex' && vertexIndex !== null) {
           let target = snapped;
           if (entry.polyline) {
-            const endpointHit = findNearestLineEndpoint(mapPoint, 14);
+            const endpointHit = findNearestLineEndpoint(mapPoint, getEditorHitRadius(14));
             if (endpointHit &&
               !(endpointHit.index === index && endpointHit.vertexIndex === vertexIndex)) {
               target = { x: endpointHit.point[0], z: endpointHit.point[1] };
@@ -7121,18 +8495,56 @@ function getRoadLineStyle(type) {
           }
           editorState.dragging.didMove = true;
         }
-        buildBlueprintFromData(blueprintData);
-        rebuildBlueprintCity();
-        updateSelectionMarkers();
+        scheduleEditorRebuild();
       });
 
-      renderer.domElement.addEventListener('pointerup', () => {
+      renderer.domElement.addEventListener('pointerup', (e) => {
+        if (e.pointerType === 'touch') {
+          panState.touchPoints.delete(e.pointerId);
+          if (panState.touchPoints.size < 2) {
+            panState.active = false;
+            panState.isTouch = false;
+          }
+        }
+        if (panState.pending && e.pointerId === panState.pointerId) {
+          panState.pending = false;
+          panState.active = false;
+          panState.pointerId = null;
+          const deferred = panState.deferredAction;
+          panState.deferredAction = null;
+          if (deferred) {
+            handleEditorPointerDown(deferred.snapped, deferred.mapPoint, deferred.mode, deferred.doubleClick);
+          }
+        }
+        if (panState.active && !panState.isTouch && e.pointerId === panState.pointerId) {
+          panState.active = false;
+          panState.pointerId = null;
+        }
         if (editorState.dragging?.historySnapshot &&
           editorState.dragging.didMove &&
           !editorState.dragging.historyPushed) {
           pushEditorHistory(editorState.dragging.historySnapshot);
         }
+        if (editorState.dragging?.didMove) {
+          scheduleEditorRebuild();
+        }
         editorState.dragging = null;
+      });
+
+      renderer.domElement.addEventListener('pointercancel', (e) => {
+        if (e.pointerType === 'touch') {
+          panState.touchPoints.delete(e.pointerId);
+          if (panState.touchPoints.size < 2) {
+            panState.active = false;
+            panState.isTouch = false;
+          }
+        }
+        if (panState.pointerId === e.pointerId) {
+          panState.pending = false;
+          panState.active = false;
+          panState.pointerId = null;
+          panState.deferredAction = null;
+        }
       });
 
       window.addEventListener('keydown', (e) => {
@@ -7160,6 +8572,7 @@ function getRoadLineStyle(type) {
         } else if (e.key === 'Escape') {
           editorState.draft = [];
           editorState.previewPoint = null;
+          clearJunctionMode();
           updateDraftLine();
           updateDraftMarkers();
           updateEditorStatus('Draft cancelled.');
@@ -7174,6 +8587,9 @@ function getRoadLineStyle(type) {
                 editorState.draft.pop();
               }
               editorState.previewPoint = null;
+              if (editorState.draft.length === 0) {
+                clearJunctionMode();
+              }
               updateDraftLine();
               updateDraftMarkers();
               updateEditorStatus(`Draft points: ${editorState.draft.length}`);
@@ -7240,6 +8656,7 @@ function getRoadLineStyle(type) {
         
         // Animate cars
         animateCars();
+        animateBlueprintTraffic(dt);
         
         // Animate windmills (using cached reference)
         if (windmillsGroup) {
