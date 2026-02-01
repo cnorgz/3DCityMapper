@@ -17,20 +17,12 @@ export function safeRendererInfo(renderer) {
 
 export function blueprintCounts(blueprintData) {
   if (!blueprintData) return null;
-  const keys = [
-    'coastlines',
-    'roads',
-    'zones',
-    'buildings',
-    'pois',
-    'transit',
-    'lines',
-    'paths'
-  ];
   const out = {};
-  keys.forEach((key) => {
-    if (Array.isArray(blueprintData[key])) out[key] = blueprintData[key].length;
-  });
+  Object.keys(blueprintData)
+    .sort()
+    .forEach((key) => {
+      if (Array.isArray(blueprintData[key])) out[key] = blueprintData[key].length;
+    });
   return out;
 }
 
@@ -74,6 +66,42 @@ export function stableSceneSignature(scene) {
   });
   groups.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   return { groups };
+}
+
+export function computeSceneCounts(scene) {
+  if (!scene) return null;
+  const geometries = new Set();
+  const materials = new Set();
+  let meshCount = 0;
+  let lineCount = 0;
+  let pointCount = 0;
+  let groupCount = 0;
+
+  scene.traverse((obj) => {
+    if (!obj) return;
+    if (obj.isGroup) groupCount += 1;
+    if (obj.isMesh) meshCount += 1;
+    if (obj.isLine || obj.isLine2) lineCount += 1;
+    if (obj.isPoints) pointCount += 1;
+
+    if (obj.geometry) geometries.add(obj.geometry);
+    if (obj.material) {
+      if (Array.isArray(obj.material)) {
+        obj.material.forEach((m) => materials.add(m));
+      } else {
+        materials.add(obj.material);
+      }
+    }
+  });
+
+  return {
+    meshCount,
+    lineCount,
+    pointCount,
+    groupCount,
+    geometryCount: geometries.size,
+    materialCount: materials.size
+  };
 }
 
 export function renderLoopSignature(refs) {
@@ -136,6 +164,7 @@ export function buildRefactorProbeJSON(refs) {
   const overlayGroups = refs?.overlayPreviewGroups || {};
   return {
     rendererInfo: safeRendererInfo(refs?.renderer),
+    sceneCounts: computeSceneCounts(refs?.scene),
     blueprintCounts: blueprintCounts(refs?.blueprintData),
     sceneSignature: stableSceneSignature(refs?.scene),
     overlayDrift: overlayDriftSignature(refs),

@@ -1253,6 +1253,8 @@ function getRoadLineStyle(type) {
       return Math.min(max, Math.max(min, value));
     }
 
+    const probeEnabled = new URLSearchParams(location.search).has('refactorProbe');
+
     function exposeDebugState() {
       if (window.__CITYSIM__) return;
       window.__CITYSIM__ = {
@@ -1268,8 +1270,6 @@ function getRoadLineStyle(type) {
         get editor() { return editorState; }
       };
     }
-
-    const probeEnabled = new URLSearchParams(location.search).has('refactorProbe');
 
     function getProbeRefs() {
       return {
@@ -1306,6 +1306,7 @@ function getRoadLineStyle(type) {
     }
 
     if (probeEnabled) {
+      exposeDebugState();
       import('./tools/refactorProbe.js').then(({ buildRefactorProbeJSON }) => {
         window.runRefactorProbe = () => {
           const json = buildRefactorProbeJSON(getProbeRefs());

@@ -3,7 +3,7 @@
 ## Phase 0 – Baseline
 
 Checklist (from v6):
-- Parity probe (mesh counts + vertex counts + blueprint feature counts)
+- Parity probe (mesh/line/point/group counts + blueprint feature counts)
 - Seeded RNG baseline (default seed 123456): stable counts for trees/props/lit windows
 - Overlay drift check log (no warnings at epsPx=0.05)
 - Overlay preview group counts (BlueprintOutlines/BlueprintMeshes/BlueprintLabels/RoadCenterlines/RoadOffsetDebug)
@@ -14,6 +14,8 @@ Checklist (from v6):
   - blueprintRootGroup children
 - RenderOrder signature for preview groups (min/max/unique renderOrder values)
 - ViewMode signature (plan→3d→street→fidelity): overlay/editor gating + render throttle targets + props/fx visibility
+- RenderLoop signature (RENDER_FPS table + target FPS per mode)
+- LocalStorage keys report (see docs/LOCALSTORAGE_KEYS.md)
 
 How to run probe:
 1) Start a static server (example):
