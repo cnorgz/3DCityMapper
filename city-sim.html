@@ -1269,6 +1269,52 @@ function getRoadLineStyle(type) {
       };
     }
 
+    const probeEnabled = new URLSearchParams(location.search).has('refactorProbe');
+
+    function getProbeRefs() {
+      return {
+        renderer,
+        scene,
+        blueprintData,
+        mapCoordMapper,
+        mapOverlayGroup,
+        mapOverlayImgW: MAP_OVERLAY_IMG_W,
+        mapOverlayImgH: MAP_OVERLAY_IMG_H,
+        overlayPxToWorld,
+        overlayWorldToPx,
+        renderFps: RENDER_FPS,
+        animationEnabled,
+        setViewMode,
+        getViewMode: () => viewMode,
+        snapshotViewMode: () => ({
+          viewMode,
+          overlayVisible: !!mapOverlayMesh?.visible,
+          editorVisible: !!editorGroup?.visible,
+          propsVisible: !!LAYERS?.props?.visible,
+          fxVisible: !!LAYERS?.fx?.visible,
+          blueprintPropsVisible: !!BLUEPRINT_LAYERS?.props?.visible,
+          blueprintFxVisible: !!BLUEPRINT_LAYERS?.fx?.visible
+        }),
+        overlayPreviewGroups: {
+          BlueprintOutlines: blueprintOutlineGroup,
+          BlueprintMeshes: blueprintMeshGroup,
+          BlueprintLabels: blueprintLabelGroup,
+          RoadCenterlines: blueprintCenterlineGroup,
+          RoadOffsetDebug: blueprintOffsetDebugGroup
+        }
+      };
+    }
+
+    if (probeEnabled) {
+      import('./tools/refactorProbe.js').then(({ buildRefactorProbeJSON }) => {
+        window.runRefactorProbe = () => {
+          const json = buildRefactorProbeJSON(getProbeRefs());
+          console.log(json);
+          return json;
+        };
+      });
+    }
+
     // Coordinate contract: image (0,0) top-left; world (0,0) center; +X right, +Z down.
     function overlayWorldToPx(x, z) {
       if (!mapCoordMapper || !mapOverlayGroup) return null;
