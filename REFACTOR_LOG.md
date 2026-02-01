@@ -4,7 +4,6 @@
 
 Checklist (from v6):
 - Parity probe (mesh/line/point/group counts + blueprint feature counts)
-- Seeded RNG baseline (default seed 123456): stable counts for trees/props/lit windows
 - Overlay drift check log (no warnings at epsPx=0.05)
 - Overlay preview group counts (BlueprintOutlines/BlueprintMeshes/BlueprintLabels/RoadCenterlines/RoadOffsetDebug)
 - Renderer info snapshots (renderer.info.memory + renderer.info.render) before/after 5 rebuilds
