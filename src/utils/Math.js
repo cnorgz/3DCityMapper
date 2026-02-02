@@ -2,7 +2,7 @@ export function clampNumber(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
-export function createRNG(seed) {
+export function mulberry32(seed) {
   return function() {
     let t = seed += 0x6D2B79F5;
     t = Math.imul(t ^ (t >>> 15), t | 1);
@@ -11,4 +11,4 @@ export function createRNG(seed) {
   };
 }
 
-export const rng = createRNG(123456); // Change seed to regenerate the city
+export const rng = mulberry32(123456); // Change seed to regenerate the city
