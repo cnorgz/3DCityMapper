@@ -3,7 +3,7 @@
 ## Metadata
 - base_commit: bea3202
 - phase_end_commit: 7f34515
-- packet_commit: PENDING (set after packet commit)
+- packet_commit: 3a63b65
 
 ## Command Outputs (verbatim)
 
