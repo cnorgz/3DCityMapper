@@ -1,6 +1,6 @@
-# 3DCityMapper — Refactor Execution Plan (Codex‑CLI Optimized, Scanner‑Ready) v6
+# 3DCityMapper — Refactor Execution Plan (Codex‑CLI Optimized, Scanner‑Ready) v7
 
-**Date:** Feb 1, 2026  
+**Date:** Feb 3, 2026  
 **Scope:** Refactor monolithic `city-sim.html` into a modular architecture with strong guardrails, while laying clean foundations for:
 - user **overlay image upload + calibration**
 - future **auto-scan → DraftBlueprint → BlueprintModel**
@@ -9,9 +9,7 @@
 
 **Primary Tooling:** Codex CLI (no build step required)
 
-> v6 deltas vs v5: cleaned up version notes, added explicit Phase 0 no-extraction rule, generalized execution loop wording, and fixed footer version.
-
-> v6 incorporates your latest answers: keep the refactor focused, keep mapping deterministic, constrain uploaded images to a standard max spec, preserve “start from scratch” editing, keep dev/debug outputs available (console + optional UI HUD).
+> v7 deltas vs v6: adds a strict **review-packet workflow**, a **baseline anchor** procedure (Codex MCP attempt → Xav fallback), deterministic evidence commands (phase-end commit, focus paths), and a carry-forward policy to fold drifts/omissions into the next phase prompt.
 
 ---
 
@@ -83,12 +81,16 @@ To keep the system stable and deterministic during refactor (and early scanner M
 - Introducing circular imports.
 - Breaking touch (joystick/pinch/zoom buttons) during InputRouter extraction.
 - Conflating layer scopes too early (legacy vs blueprint vs overlay/debug).
+- Conflating “review packet” docs with “phase work” code (keep evidence targeted at phase-end commit).
 
 ---
 
 ## 3) Target Module Map (Authoritative)
 
 **Thin HTML shell → single module entry**
+
+**Entrypoint policy (v7):** The runnable entrypoint stays **`city-sim.html`** through the refactor phases. `/index.html` + `/src/app.js` is a *future consolidation target* and must only be introduced in an explicit, separately-scoped micro-phase (to avoid accidental boot/loader drift).
+
 ```
 /index.html            # shell only, imports /src/app.js
 /src/app.js            # orchestrator (thin)
@@ -249,7 +251,6 @@ This preserves the current “swap city modes” behavior and prevents scope mix
 ## 6) Refactor Phases (Codex-executable, parity-first)
 
 ### Phase 0 — Baseline & Instrumentation
-
 **Rule:** Phase 0 is **instrumentation only** — **no extraction/refactor** and no behavior changes outside an explicit probe gate.
 
 Deliver:
@@ -262,7 +263,7 @@ Deliver:
 - ViewMode signature (plan→3d→street→fidelity)
 - RenderLoop signature (target FPS chosen per mode + animation toggle)
 - LocalStorage usage report (exact keys currently used)
-- REFACTOR_LOG.md baseline record
+- **REFACTOR_LOG.md baseline anchor captured** (see §8.3)
 
 Acceptance:
 - Stable across reloads (no behavior drift).
@@ -403,10 +404,10 @@ Acceptance:
 Extract:
 - PanelManager + panels
 - UI emits events/actions only
-- EventBus strict mode enabled in dev builds (reject unknown events)
+- EventBus strict mode enabled via a dev runtime switch (e.g., `?dev=1` or `localStorage.3dcm:dev=1`) (reject unknown events)
 
 Add:
-- DevHUD panel (optional, dev-only toggle):
+- DevHUD panel (optional, gated by the same dev runtime switch):
   - shows drift warnings, validator warnings, parity probe deltas
   - still logs to console
 
@@ -468,28 +469,98 @@ Stop immediately if:
 
 ---
 
-## 8) Git Safety + Codex Execution Loop (branch-first)
+## 8) Workflow & Evidence Packets (v7)
 
-### 8.1 Git safety (non-negotiable)
-- **Never work directly on `master`.** Create a dedicated refactor branch before Phase 0.
-- Keep commits small and reviewable; prefer **1 phase = 1 branch** (or 1–3 closely-related phases).
-- Tag a known-good baseline before major extraction (optional but recommended): `baseline/pre-refactor`.
+### 8.1 Roles (two-person loop)
+- SeniorDev1 reviews v7 + review packets + logs, then produces the next Codex task prompt.
+- Codex executes the prompt, runs fixed evidence commands, generates the review packet, and commits it.
+
+Codex does **not** “review the plan”; the phase prompt must embed the checklist/invariants for that phase.
+
+### 8.2 Git safety (non-negotiable)
+- **Never work directly on `master`.** Use a dedicated refactor branch.
+- Keep commits small and rollback-friendly; prefer **1 phase = 1 branch** (or 1–3 closely related phases).
 - If anything looks off, stop and reset the branch rather than “patching forward”.
 
-### 8.2 Execution loop (commit-by-commit)
-Per commit (or per PR chunk):
-1) Apply the smallest coherent change set.
-   - For extraction phases: extract **one** module verbatim
-2) Wire via imports/injection
-3) Run parity probe + drift check + RenderLoop signature
-4) Commit: `refactor(P<phase>): <module>`
-5) Update REFACTOR_LOG.md
-6) Update docs touched
+### 8.3 Baseline anchor capture (required)
+The canonical baseline is a single `runRefactorProbe()` JSON fingerprint stored in `REFACTOR_LOG.md`, tied to a commit SHA.
 
-**Batching rule (to reduce human copy/paste):** Codex may complete a *reasonable batch* of steps in one session (e.g., an entire phase task list), **but must**:
-- run parity/drift checks at the specified checkpoints,
-- produce a short *session report* listing commits made, checks run, and any deviations,
-- stop immediately on any stop-rule trigger.
+Serve the app (required):
+1) `python3 -m http.server 8000`
+2) open `http://localhost:8000/city-sim.html?refactorProbe=1`
+
+Two modes (Codex must attempt Mode A once, then fallback):
+- **Mode A (Codex MCP DevTools, opportunistic):**
+  - attempt once only (no retry loops)
+  - capture as string:
+    - `JSON.stringify(runRefactorProbe())` or
+    - `console.log("REFACTOR_PROBE_JSON=" + JSON.stringify(runRefactorProbe()))`
+  - if capture fails/truncates: record failure reason and fallback
+- **Mode B (Xav manual):**
+  - Xav runs `runRefactorProbe()` in browser console and provides JSON to Codex
+  - Codex pastes JSON into `REFACTOR_LOG.md` and commits
+
+Baseline record fields (in `REFACTOR_LOG.md`):
+- `baseline_commit: <sha>`
+- `captured_at_phase: <phase>`
+- `capture_method: codex-mcp | xav-manual`
+- JSON block (verbatim)
+
+### 8.4 Carry-forward policy (drift is expected)
+Every review packet ends with Carry-Forward issues:
+- **P0 blockers** (must fix before proceeding)
+- **P1 fold-forward** (first steps in next phase prompt)
+- **P2 notes** (only if cheap)
+
+Each P0/P1 must include:
+- locator (file:line OR commit hash OR fixed-string grep)
+- 1-line acceptance criterion (“done when …”)
+
+### 8.5 Review packet workflow (required at end of every phase / sub-phase)
+Codex must generate and commit:
+- `docs/ai/review_packet_phaseX.md`
+- `docs/ai/review_packet_phaseX_Y.md` for micro-fixes
+
+Packet must declare:
+- `base_commit` (start of phase)
+- `phase_end_commit` (last work commit; review packet commit is not included in phase delta)
+
+Packet generation is **fixed-commands only** (no exploration). Extra snippets are allowed only to document P0/P1 items:
+- `git show -U3 <phase_end_commit> -- <file>`
+- or `sed -n '<a>,<b>p' <file>`
+
+Focus paths:
+- Each phase prompt defines `FOCUS_PATHS="..."` (space-separated paths) and packet excerpts must be limited to those paths.
+
+Command determinism:
+- detect tools: `command -v rg >/dev/null && echo "rg=1" || echo "rg=0"`
+- probe gate checks use fixed-string grep:
+  - `grep -nF "refactorProbe" city-sim.html`
+  - `grep -nF "import('./tools/refactorProbe.js')" city-sim.html || grep -nF 'import("./tools/refactorProbe.js")' city-sim.html`
+
+Evidence commands (verbatim output) in the packet:
+- `git status -sb`
+- `git log --oneline --decorate -n 20`
+- `git diff --stat <base_commit>...<phase_end_commit>`
+- `git diff --check <base_commit>...<phase_end_commit>`
+- one of (choose based on size; always limited to FOCUS_PATHS):
+  - `git diff -U15 <base_commit>...<phase_end_commit> -- $FOCUS_PATHS` (preferred)
+  - OR `git show -U15 <each work commit> -- $FOCUS_PATHS`
+
+Packet commit evidence (to prove “packet-only” change) is captured before committing the packet:
+- stage packet file(s)
+- include in packet:
+  - `git diff --stat --cached`
+  - `git diff --check --cached`
+Then commit the packet.
+
+### 8.6 Cheap self-checks (best-effort, do not “fix to satisfy”)
+Codex should run and record results per phase:
+- `git diff --check <base_commit>...<phase_end_commit>` (already required)
+- Node ESM import smoke tests only for Node-safe modules under:
+  - `src/config/*`, `src/utils/*`
+If import-smoke fails due to browser-only environment mismatch, record reason and move on (do not refactor to satisfy Node unless prompted).
+- If `package.json` exists later, run whatever scripts exist (test/lint) and record.
 
 ---
 
@@ -513,5 +584,4 @@ These do not block refactor; they become relevant when Phase 11 moves beyond pla
 
 ---
 
-**v6 is ready for Codex to begin refactorization.**  
-It tightens scope separation, preserves deterministic coordinate mapping, preserves render-loop semantics, and keeps scanning work properly deferred while wiring the future path.
+**v7 is ready to drive the Codex refactor loop with deterministic phase evidence and low-slop reviews.**
