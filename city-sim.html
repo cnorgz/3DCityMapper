@@ -805,6 +805,8 @@
     import { createViewModeController } from './src/render/ViewModeController.js';
     import { createRenderLoop } from './src/render/RenderLoop.js';
     import { getSharedWindowMaterials, getSharedWindowGeometry } from './src/render/MaterialLibrary.js';
+    import { createLegacyTerrain } from './src/render/TerrainLayer.js';
+    import { buildLegacyTerrainDefs } from './src/terrain/TerrainGenerator.js';
     
     // ============================================
     // CONFIGURATION
@@ -3298,30 +3300,13 @@ function validateBlueprint(data) {
     // ============================================
     
     function buildPhase1() {
-      // Sea
-      const sea = createPolygon(seaPoints, COLORS.sea, -2);
-      sea.name = 'sea';
-      LAYERS.terrain.add(sea);
-      
-      // Beach
-      const beach = createPolygon(beachPoints, COLORS.beach, -1);
-      beach.name = 'beach';
-      LAYERS.terrain.add(beach);
-      
-      // Mainland base
-      const mainlandPoints = [
-        [0.36, 0], [1, 0], [1, 1], [0.32, 1],
-        [0.30, 0.85], [0.32, 0.70], [0.36, 0.55],
-        [0.38, 0.42], [0.40, 0.30], [0.38, 0.15]
-      ];
-      const mainland = createPolygon(mainlandPoints, COLORS.land, 0);
-      mainland.name = 'mainland';
-      LAYERS.terrain.add(mainland);
-      
-      // Island base
-      const island = createPolygon(islandOutline, 0xb8a888, 0.5);
-      island.name = 'island';
-      LAYERS.terrain.add(island);
+      const terrainDefs = buildLegacyTerrainDefs({
+        seaPoints,
+        beachPoints,
+        islandOutline,
+        colors: COLORS
+      });
+      createLegacyTerrain({ layer: LAYERS.terrain, createPolygon, defs: terrainDefs });
       
       // Island zones
       Object.entries(islandZones).forEach(([key, zone]) => {
