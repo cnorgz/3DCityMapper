@@ -524,6 +524,9 @@ Codex must generate and commit:
 Packet must declare:
 - `base_commit` (start of phase)
 - `phase_end_commit` (last work commit; review packet commit is not included in phase delta)
+- `packet_commit` (commit that adds the packet content)
+
+**Packet immutability rule:** after `packet_commit`, do not “fix the packet” with follow-up docs(ai) commits. If metadata/content is wrong, **amend the packet commit once** (so `packet_commit` remains the commit that contains the packet). If a follow-up fix commit already exists, treat it as a micro-phase and produce `review_packet_phaseX_Y.md`.
 
 Packet generation is **fixed-commands only** (no exploration). Extra snippets are allowed only to document P0/P1 items:
 - `git show -U3 <phase_end_commit> -- <file>`
@@ -540,12 +543,17 @@ Command determinism:
 
 Evidence commands (verbatim output) in the packet:
 - `git status -sb`
+- `git rev-parse --short HEAD`
 - `git log --oneline --decorate -n 20`
 - `git diff --stat <base_commit>...<phase_end_commit>`
 - `git diff --check <base_commit>...<phase_end_commit>`
 - one of (choose based on size; always limited to FOCUS_PATHS):
   - `git diff -U15 <base_commit>...<phase_end_commit> -- $FOCUS_PATHS` (preferred)
   - OR `git show -U15 <each work commit> -- $FOCUS_PATHS`
+
+**Huge-diff fallback (deterministic, no loops):** if diff output would be massive/truncated (common for `city-sim.html`), do not re-run “full” commands. Instead, reduce context *only* for `city-sim.html` and keep -U15 for extracted modules:
+- `git show -U5 <phase_end_commit> -- city-sim.html`
+- `git show -U15 <phase_end_commit> -- <other paths in $FOCUS_PATHS>`
 
 Packet commit evidence (to prove “packet-only” change) is captured before committing the packet:
 - stage packet file(s)
@@ -554,7 +562,7 @@ Packet commit evidence (to prove “packet-only” change) is captured before co
   - `git diff --check --cached`
 Then commit the packet.
 
-### 8.6 Cheap self-checks (best-effort, do not “fix to satisfy”)
+### 8.6 Cheap self-checks (best-effort, do not “fix to satisfy”) (best-effort, do not “fix to satisfy”)
 Codex should run and record results per phase:
 - `git diff --check <base_commit>...<phase_end_commit>` (already required)
 - Node ESM import smoke tests only for Node-safe modules under:
