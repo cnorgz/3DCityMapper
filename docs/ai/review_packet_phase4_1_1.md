@@ -4,7 +4,7 @@
 - base_branch: refactor/phase4b-overlay-system
 - base_commit: b77b0df
 - phase_end_commit: deb35db
-- packet_commit: PENDING
+- packet_commit: 120816a
 
 ## Phase checklist
 - ✅ Phase 4b packet metadata corrected (packet_commit points to initial packet add commit)
