@@ -9,7 +9,7 @@
 
 ## Overlay calibration
 - Key format: `overlayCalib:<imageId>`
-- Current placeholder imageId: `demo` (until ImageSource is available).
+- Placeholder imageId: `demo` when no uploaded image is present.
 
 ## Uploaded overlay image
 - `3dcm:v1:overlay.imageId` (name:size:lastModified)

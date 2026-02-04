@@ -790,7 +790,6 @@
     import { normalizeBlueprint } from './src/core/BlueprintNormalizer.js';
     import { BlueprintModel } from './src/core/BlueprintModel.js';
     import { pixelToOverlayLocal, overlayLocalToPixel } from './src/core/CoordinateMapper.js';
-    import { computeOverlayDrift } from './src/core/OverlayTransform.js';
     import {
       loadFromStore as loadOverlayImageFromStore,
       getDataURL as getOverlayImageDataURL,
@@ -5418,7 +5417,9 @@ function validateBlueprint(data) {
       loadingBar.style.width = '20%';
 
       try {
-        runMigrations({ imageId: PERSISTENCE_IMAGE_ID });
+        loadOverlayImageFromStore();
+        const migrationImageId = getOverlayImageId() || PERSISTENCE_IMAGE_ID;
+        runMigrations({ imageId: migrationImageId });
       } catch (error) {
         console.warn('Failed to run migrations:', error);
       }
@@ -5438,7 +5439,6 @@ function validateBlueprint(data) {
         
         // Map overlay
         try {
-          loadOverlayImageFromStore();
           const uploadedDataUrl = getOverlayImageDataURL();
           const uploadedMeta = getOverlayImageMeta();
           mapOverlayImgW = uploadedMeta?.width || MAP_OVERLAY_IMG_W;
