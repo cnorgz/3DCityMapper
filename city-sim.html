@@ -745,8 +745,6 @@
   
   <script type="module">
     import * as THREE from 'three';
-    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-    import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
     import { Line2 } from 'three/addons/lines/Line2.js';
     import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
     import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
@@ -802,6 +800,10 @@
       buildBlueprintPreview,
       clearBlueprintPreview
     } from './src/render/BlueprintPreviewRenderer.js';
+    import { createSceneManager } from './src/render/SceneManager.js';
+    import { createLayerManager } from './src/render/LayerManager.js';
+    import { createViewModeController } from './src/render/ViewModeController.js';
+    import { createRenderLoop } from './src/render/RenderLoop.js';
     
     // ============================================
     // CONFIGURATION
@@ -811,62 +813,18 @@
     // ============================================
     // SCENE SETUP
     // ============================================
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.0;
-    document.body.appendChild(renderer.domElement);
-
-const scene = new THREE.Scene();
+const sceneManager = createSceneManager({ container: document.body });
+const renderer = sceneManager.renderer;
+const scene = sceneManager.scene;
+const { orthoCamera, perspCamera, getActiveCamera, setActiveCamera: setSceneActiveCamera } = sceneManager.cameras;
+const controls = sceneManager.controls;
+const { ambientLight, sunLight, hemisphereLight } = sceneManager.lights;
 
 // ============================================
 // LAYERS SYSTEM
 // ============================================
-const LAYERS = {
-  terrain: new THREE.Group(),
-  overlay: new THREE.Group(),
-  zones: new THREE.Group(),
-  roads: new THREE.Group(),
-  buildings: new THREE.Group(),
-  props: new THREE.Group(),
-  fx: new THREE.Group(),
-  debug: new THREE.Group()
-};
-Object.values(LAYERS).forEach(g => scene.add(g));
-
-const BLUEPRINT_LAYERS = {
-  terrain: new THREE.Group(),
-  zones: new THREE.Group(),
-  roads: new THREE.Group(),
-  buildings: new THREE.Group(),
-  props: new THREE.Group(),
-  fx: new THREE.Group()
-};
-const blueprintRootGroup = new THREE.Group();
-blueprintRootGroup.name = 'BlueprintRoot';
-Object.values(BLUEPRINT_LAYERS).forEach(g => {
-  g.visible = false;
-  blueprintRootGroup.add(g);
-});
-
-// Blueprint traffic (Phase 6.1)
-const blueprintTraffic = {
-  group: new THREE.Group(),
-  cars: [],
-  paths: [],
-  lights: []
-};
-blueprintTraffic.group.name = 'BlueprintTraffic';
-
-function ensureBlueprintTrafficGroup() {
-  if (!BLUEPRINT_LAYERS.props.children.includes(blueprintTraffic.group)) {
-    BLUEPRINT_LAYERS.props.add(blueprintTraffic.group);
-  }
-}
-ensureBlueprintTrafficGroup();
+const layerManager = createLayerManager(scene);
+const { LAYERS, BLUEPRINT_LAYERS, blueprintRootGroup, blueprintTraffic, ensureBlueprintTrafficGroup } = layerManager;
 
 // ============================================
 // ZONE REGISTRY
@@ -924,13 +882,6 @@ function makeInstanced(geo, mat, matrices) {
 // Cached scene references (avoid getObjectByName every frame)
 let windmillsGroup = null;
 let ferrisWheelRef = null;
-
-// Environment map for reflections
-renderer.outputColorSpace = THREE.SRGBColorSpace;
-const pmrem = new THREE.PMREMGenerator(renderer);
-const envRT = pmrem.fromScene(new RoomEnvironment(), 0.04);
-scene.environment = envRT.texture;
-pmrem.dispose();
 
 // Map overlay and coordinate mapper
 let mapOverlayGroup = null;
@@ -1120,60 +1071,13 @@ function validateBlueprint(data) {
   return validateBlueprintCore(data, blueprintHelpers);
 }
 
-// Cameras
-    const aspect = window.innerWidth / window.innerHeight;
-    const frustumSize = MAP_HEIGHT * 1.1;
-    
-    const orthoCamera = new THREE.OrthographicCamera(
-      -frustumSize * aspect / 2,
-      frustumSize * aspect / 2,
-      frustumSize / 2,
-      -frustumSize / 2,
-      1, 2000
-    );
-    orthoCamera.up.set(0, 0, -1);
-    orthoCamera.position.set(0, 800, 1);
-    orthoCamera.lookAt(0, 0, 0);
-    
-    const perspCamera = new THREE.PerspectiveCamera(60, aspect, 1, 5000);
-    perspCamera.position.set(-600, 400, 600);
-    perspCamera.lookAt(0, 0, 0);
-    
     let activeCamera = orthoCamera;
     let viewMode = 'plan';
+    const setActiveCamera = (camera) => {
+      activeCamera = camera;
+      setSceneActiveCamera(camera);
+    };
 
-// Controls
-    const controls = new OrbitControls(perspCamera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.05;
-    controls.maxPolarAngle = Math.PI / 2 - 0.1;
-    controls.minDistance = 100;
-    controls.maxDistance = 2000;
-    controls.enabled = false;
-    
-    // ============================================
-    // LIGHTING
-    // ============================================
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
-    scene.add(ambientLight);
-    
-    const sunLight = new THREE.DirectionalLight(0xffeedd, 1.2);
-    sunLight.position.set(300, 500, 200);
-    sunLight.castShadow = true;
-    sunLight.shadow.mapSize.set(2048, 2048);
-    sunLight.shadow.camera.near = 1;
-    sunLight.shadow.camera.far = 1500;
-    sunLight.shadow.camera.left = -800;
-    sunLight.shadow.camera.right = 800;
-    sunLight.shadow.camera.top = 600;
-    sunLight.shadow.camera.bottom = -600;
-    sunLight.shadow.bias = -0.0001;
-    sunLight.shadow.normalBias = 0.02;
-    scene.add(sunLight);
-    
-    const hemisphereLight = new THREE.HemisphereLight(0x88ccff, 0x44aa44, 0.3);
-    scene.add(hemisphereLight);
-    
     // ============================================
 // HELPER FUNCTIONS
     // ============================================
@@ -4897,7 +4801,6 @@ function validateBlueprint(data) {
     let isNight = false;
     let fidelityModeActive = false;
     let animationEnabled = true;
-    let lastRenderTime = 0;
     const PERF_LOGGING = false;
     const fidelityState = {
       shadowEnabled: renderer.shadowMap.enabled,
@@ -4981,54 +4884,19 @@ function validateBlueprint(data) {
       }
     });
     
-    function setViewMode(mode) {
-      if (viewMode === 'fidelity' && mode !== 'fidelity') {
-        applyFidelityMode(false);
-      }
-      viewMode = mode;
-      
-      ['btnPlan','btn3D','btnStreet','btnFidelity'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.classList.remove('active');
-      });
-      
-      switch (mode) {
-        case 'plan':
-          activeCamera = orthoCamera;
-          controls.enabled = false;
-          document.getElementById('btnPlan').classList.add('active');
-          break;
-        case '3d':
-          activeCamera = perspCamera;
-          controls.enabled = true;
-          perspCamera.position.set(-600, 400, 600);
-          controls.target.set(0, 0, 0);
-          controls.update();
-          document.getElementById('btn3D').classList.add('active');
-          break;
-        case 'street':
-          activeCamera = perspCamera;
-          controls.enabled = true;
-          perspCamera.position.set(0, 30, 200);
-          controls.target.set(0, 20, 0);
-          controls.update();
-          document.getElementById('btnStreet').classList.add('active');
-          break;
-        case 'fidelity':
-          activeCamera = orthoCamera;
-          controls.enabled = false;
-          applyFidelityMode(true);
-          document.getElementById('btnFidelity').classList.add('active');
-          break;
-      }
-      
-      updateOverlayVisibility();
-      if (editorState.enabled) {
-        updateEditorStatus(viewMode === 'fidelity' ? 'Editor ready.' : 'Editor paused (switch to Fidelity Mode).');
-      }
-      if (editorGroup) editorGroup.visible = editorState.enabled && viewMode === 'fidelity';
-      setCityLayerVisibility();
-    }
+    const viewModeController = createViewModeController({
+      getViewMode: () => viewMode,
+      setViewModeValue: (mode) => { viewMode = mode; },
+      cameras: { orthoCamera, perspCamera, setActiveCamera },
+      controls,
+      applyFidelityMode,
+      updateOverlayVisibility,
+      updateEditorStatus,
+      editorState,
+      editorGroup,
+      setCityLayerVisibility
+    });
+    const setViewMode = (mode) => viewModeController.setViewMode(mode);
     
     function setTimeOfDay(night) {
       isNight = night;
@@ -8115,110 +7983,31 @@ function validateBlueprint(data) {
 // ANIMATION LOOP
     // ============================================
     
-    let lastT = performance.now();
-    
-    function animate() {
-      requestAnimationFrame(animate);
-      
-      const now = performance.now();
-      const isRealtime = (viewMode === '3d' || viewMode === 'street');
-      const targetFps = isRealtime
-        ? (animationEnabled ? RENDER_FPS.realtime : RENDER_FPS.realtimeIdle)
-        : (animationEnabled ? RENDER_FPS.idle : RENDER_FPS.idleNoAnim);
-      const minFrameMs = 1000 / targetFps;
-      if (now - lastRenderTime < minFrameMs) return;
-      lastRenderTime = now;
-      const dt = Math.min(0.05, (now - lastT) / 1000);
-      lastT = now;
-      const time = now * 0.001;
-      
-      const animActive = animationEnabled && isRealtime;
-
-      // Keyboard movement (3D + street)
-      if (viewMode === '3d' || viewMode === 'street') {
-        let dx = 0, dz = 0;
-        if (keyState.ArrowLeft) dx -= 1;
-        if (keyState.ArrowRight) dx += 1;
-        if (keyState.ArrowUp) dz -= 1;
-        if (keyState.ArrowDown) dz += 1;
-        
-        if (dx || dz) {
-          const len = Math.hypot(dx, dz) || 1;
-          dx /= len; dz /= len;
-          
-          const speed = 220; // world units/sec
-          const yaw = controls.getAzimuthalAngle();
-          const cos = Math.cos(yaw), sin = Math.sin(yaw);
-          
-          const mx = (dx * cos - dz * sin) * speed * dt;
-          const mz = (dx * sin + dz * cos) * speed * dt;
-          
-          perspCamera.position.x += mx;
-          perspCamera.position.z += mz;
-          controls.target.x += mx;
-          controls.target.z += mz;
-        }
-      }
-      
-      if (animActive) {
-        // Animate water
-        animateWater(time);
-        
-        // Animate cars
-        animateCars();
-        animateBlueprintTraffic(dt);
-        
-        // Animate windmills (using cached reference)
-        if (windmillsGroup) {
-          windmillsGroup.children.forEach(windmill => {
-            if (windmill.userData.blades) {
-              windmill.userData.blades.rotation.z =
-                time * windmill.userData.rotationSpeed * 10 + windmill.userData.rotationOffset;
-            }
-          });
-        }
-        
-        // Animate Ferris wheel (using cached reference)
-        if (ferrisWheelRef && ferrisWheelRef.userData.wheel) {
-          ferrisWheelRef.userData.wheel.rotation.y += 0.003;
-          // Keep cabins upright
-          ferrisWheelRef.userData.wheel.children.forEach(child => {
-            if (child.userData.baseAngle !== undefined) {
-              child.rotation.x = -ferrisWheelRef.userData.wheel.rotation.y;
-            }
-          });
-        }
-        
-        // Blink aircraft warning lights
-        warningLights.forEach(obj => {
-          const blink = Math.sin(time * 3) > 0;
-          obj.material.emissiveIntensity = blink ? 2 : 0.2;
-        });
-        // Cinema marquee lights twinkle
-        marqueeLights.forEach(obj => {
-          const twinkle = Math.sin(time * 5 + obj.position.x) > 0.3;
-          obj.material.emissiveIntensity = twinkle ? 1 : 0.3;
-        });
-      }
-      
-      // Update controls
-      if (controls.enabled) {
-        controls.update();
-      }
-      
-      renderer.render(scene, activeCamera);
-    }
+    const renderLoop = createRenderLoop({
+      renderer,
+      scene,
+      cameras: {
+        perspCamera,
+        getActiveCamera: () => activeCamera
+      },
+      controls,
+      getViewMode: () => viewMode,
+      getAnimationEnabled: () => animationEnabled,
+      renderFps: RENDER_FPS,
+      keyState,
+      animateWater,
+      animateCars,
+      animateBlueprintTraffic,
+      getWindmillsGroup: () => windmillsGroup,
+      getFerrisWheelRef: () => ferrisWheelRef,
+      warningLights,
+      marqueeLights,
+      getPerfLogging: () => PERF_LOGGING
+    });
     
     // Start
     init();
-    animate();
-    
-    // Optional: Performance monitoring (logs draw calls and triangles)
-    if (PERF_LOGGING) {
-      setInterval(() => {
-        console.log("drawCalls:", renderer.info.render.calls, "tris:", renderer.info.render.triangles);
-      }, 1000);
-    }
+    renderLoop.start();
     
   </script>
 </body>
