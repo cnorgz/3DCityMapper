@@ -3,7 +3,7 @@
 ## Metadata
 - base_commit: c1e482d
 - phase_end_commit: ce16421
-- packet_commit: PENDING
+- packet_commit: aaaf294
 
 ## Probe summary (Mode A, MCP)
 - json_sha256: 2526c68e85ea72655154e08d692db9d3d0c46de7b5edf812091f674f74b6fa0b
