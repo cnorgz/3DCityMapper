@@ -4,7 +4,7 @@
 - base_branch: refactor/phase4-overlay-coords
 - base_commit: 2eeedf9
 - phase_end_commit: b9b4c67
-- packet_commit: PENDING
+- packet_commit: e6edf1c
 
 ## Phase checklist
 - ✅ ImageSource added (upload + persistence + maxEdgePx normalization)
