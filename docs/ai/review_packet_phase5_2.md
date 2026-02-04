@@ -3,7 +3,7 @@
 ## Metadata
 - base_commit: 8d49f5e
 - phase_end_commit: 8c0801e
-- packet_commit: PENDING
+- packet_commit: 093431d
 
 ## Phase checklist
 - ✅ Probe hygiene verification captured in REFACTOR_LOG.md
