@@ -4,7 +4,7 @@
 - base_branch: refactor/phase3-blueprint-core
 - base_commit: 6c73fca
 - phase_end_commit: 5676069
-- packet_commit: 40ee0a8
+- packet_commit: 061885e
 
 ## Phase Checklist
 - ✅ Snapshot helpers added to BlueprintModel (getSnapshot/applySnapshot)
