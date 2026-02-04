@@ -1,4 +1,4 @@
-import { getItem, setItem } from '../persistence/StateStore.js';
+import { getItem, setItem, removeItem } from '../persistence/StateStore.js';
 
 const STORAGE_KEYS = {
   imageId: 'overlay.imageId',
@@ -130,6 +130,9 @@ export function clearImage() {
   currentImageId = null;
   currentDataUrl = null;
   currentMeta = null;
+  removeItem(STORAGE_KEYS.imageId);
+  removeItem(STORAGE_KEYS.imageData);
+  removeItem(STORAGE_KEYS.imageMeta);
 }
 
 export function getStorageKeys() {

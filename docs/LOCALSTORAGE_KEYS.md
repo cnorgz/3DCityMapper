@@ -1,9 +1,9 @@
 # LocalStorage Keys
 
-## 3dcm:v1:overlayCalib:demo
+## 3dcm:v1:overlayCalib:<imageId>
 - Purpose: Persist map overlay calibration settings (offsets, rotation, scale, opacity, dimmer, visibility).
 - Where used: city-sim.html:950, city-sim.html:6053, city-sim.html:6063
-- Notes: Stored as JSON (overlaySettings). `demo` is a placeholder imageId until Phase 4.
+- Notes: Stored as JSON (overlaySettings). Uses uploaded overlay imageId when present; falls back to `demo` when no upload exists.
 
 ## 3dcm:v1:ui.overlayPanelCollapsed
 - Purpose: Persist overlay panel collapse state.
@@ -58,7 +58,7 @@
 ## tadhgCityOverlayCalib
 - Purpose: Legacy overlay calibration storage.
 - Where used: src/persistence/Migrations.js:4, src/persistence/Migrations.js:19
-- Notes: Migrated to 3dcm:v1:overlayCalib:demo on boot if new key missing.
+- Notes: Migrated to 3dcm:v1:overlayCalib:<imageId> on boot if new key missing (imageId falls back to `demo`).
 
 ## tadhgOverlayPanelCollapsed
 - Purpose: Legacy overlay panel collapse state.
