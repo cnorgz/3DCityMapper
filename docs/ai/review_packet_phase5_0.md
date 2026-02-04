@@ -4,7 +4,7 @@
 - base_branch: refactor/phase4b-overlay-system
 - base_commit: 1310de1
 - phase_end_commit: cd2a4d0
-- packet_commit: PENDING
+- packet_commit: d68f43d
 
 ## Phase checklist
 - ✅ SceneManager extracted (renderer/scene/cameras/lights + env map)
