@@ -4,7 +4,7 @@
 - base_branch: refactor/phase4b-overlay-system
 - base_commit: 1310de1
 - phase_end_commit: cd2a4d0
-- packet_commit: 79fc22f
+- packet_commit: 5a1fffd
 - later packet-fix commits: docs(ai): add review packet for phase 5 (d68f43d), docs(ai): finalize phase5 packet_commit (6ab75e6)
 
 ## Baseline / Phase 5 record check
