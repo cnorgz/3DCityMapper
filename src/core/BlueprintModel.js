@@ -22,6 +22,21 @@ export class BlueprintModel {
     return this.data;
   }
 
+  getSnapshot() {
+    const source = this.data || {};
+    try {
+      return JSON.parse(JSON.stringify(source));
+    } catch (e) {
+      return {};
+    }
+  }
+
+  applySnapshot(snapshot) {
+    const target = snapshot && typeof snapshot === 'object' ? snapshot : {};
+    this.data = normalizeBlueprint(target, this.helpers);
+    return this.data;
+  }
+
   validate(raw) {
     const target = raw !== undefined ? this._parseRaw(raw) : (this.data || {});
     return validateBlueprint(target, this.helpers);

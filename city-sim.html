@@ -785,6 +785,8 @@
     import { validateBlueprint as validateBlueprintCore } from './src/core/BlueprintValidator.js';
     import { normalizeBlueprint } from './src/core/BlueprintNormalizer.js';
     import { BlueprintModel } from './src/core/BlueprintModel.js';
+    import { pixelToOverlayLocal, overlayLocalToPixel } from './src/core/CoordinateMapper.js';
+    import { computeOverlayDrift, overlayLocalToWorld, worldToOverlayLocal } from './src/core/OverlayTransform.js';
     
     // ============================================
     // CONFIGURATION
@@ -1223,35 +1225,28 @@ function validateBlueprint(data) {
     // Coordinate contract: image (0,0) top-left; world (0,0) center; +X right, +Z down.
     function overlayWorldToPx(x, z) {
       if (!mapCoordMapper || !mapOverlayGroup) return null;
-      const local = new THREE.Vector3(x, 0, z);
-      mapOverlayGroup.worldToLocal(local);
-      return mapCoordMapper.worldToPx(local.x, local.z);
+      const local = worldToOverlayLocal({ x, y: 0, z }, mapOverlayGroup);
+      if (!local) return null;
+      return overlayLocalToPixel({ x: local.x, z: local.z }, mapCoordMapper);
     }
 
     function overlayPxToWorld(px, py, y = 0) {
       if (!mapCoordMapper || !mapOverlayGroup) return null;
-      const local = mapCoordMapper.pxToWorld(px, py, y);
-      return mapOverlayGroup.localToWorld(local);
+      const local = pixelToOverlayLocal(px, py, mapCoordMapper);
+      if (!local) return null;
+      return overlayLocalToWorld({ x: local.x, z: local.z }, mapOverlayGroup, y);
     }
 
     function verifyOverlayMapping() {
       if (!mapCoordMapper || !mapOverlayGroup) return;
-      const epsPx = 0.05;
-      const probes = [
-        { px: MAP_OVERLAY_IMG_W * 0.5, py: MAP_OVERLAY_IMG_H * 0.5 },
-        { px: MAP_OVERLAY_IMG_W * 0.1, py: MAP_OVERLAY_IMG_H * 0.1 },
-        { px: MAP_OVERLAY_IMG_W * 0.9, py: MAP_OVERLAY_IMG_H * 0.9 }
-      ];
-
-      probes.forEach((probe) => {
-        const world = overlayPxToWorld(probe.px, probe.py, 0);
-        if (!world) return;
-        const pxBack = overlayWorldToPx(world.x, world.z);
-        if (!pxBack) return;
-        const dx = Math.abs(pxBack.px - probe.px);
-        const dy = Math.abs(pxBack.py - probe.py);
-        if (dx > epsPx || dy > epsPx) {
-          console.warn('Overlay mapping drift', { probe, back: pxBack, error: { dx, dy } });
+      const drift = computeOverlayDrift({
+        dims: mapCoordMapper,
+        group: mapOverlayGroup
+      });
+      if (!drift) return;
+      drift.samples.forEach((sample, idx) => {
+        if (sample.dx > drift.epsPx || sample.dy > drift.epsPx) {
+          console.warn('Overlay mapping drift', { sampleIndex: idx, sample, epsPx: drift.epsPx });
         }
       });
     }
@@ -6461,15 +6456,17 @@ function validateBlueprint(data) {
       }
 
       if (editorState.snapPixels && mapCoordMapper) {
-        const px = mapCoordMapper.worldToPx(x, z);
+        const px = overlayLocalToPixel({ x, z }, mapCoordMapper);
         const step = Math.max(1, editorState.pixelStep);
         const snappedPx = {
           px: Math.round(px.px / step) * step,
           py: Math.round(px.py / step) * step
         };
-        const snapped = mapCoordMapper.pxToWorld(snappedPx.px, snappedPx.py);
-        x = snapped.x;
-        z = snapped.z;
+        const snapped = pixelToOverlayLocal(snappedPx.px, snappedPx.py, mapCoordMapper);
+        if (snapped) {
+          x = snapped.x;
+          z = snapped.z;
+        }
       }
 
       return { x, z };
@@ -6854,7 +6851,7 @@ function validateBlueprint(data) {
     }
 
     function applyEditorSnapshot(snapshot, label) {
-      blueprintModel.loadFromJSON(snapshot?.blueprint || {});
+      blueprintModel.applySnapshot(snapshot?.blueprint || {});
       blueprintData = blueprintModel.getData();
       editorState.draft = [];
       editorState.previewPoint = null;
