@@ -1,40 +1,21 @@
-# Persistence (Phase 2)
+# Persistence Strategy
 
 ## Namespace
-All new keys use the prefix:
-- `3dcm:v1:`
+- All new keys use: `3dcm:v1:<key>`
 
-## Placeholder imageId
-Overlay calibration is stored under:
-- `3dcm:v1:overlayCalib:demo`
+## Legacy migrations
+- `tadhgCityOverlayCalib` -> `3dcm:v1:overlayCalib:<imageId>`
+- `tadhgOverlayPanelCollapsed` -> `3dcm:v1:ui.overlayPanelCollapsed`
 
-`demo` is a temporary placeholder until Phase 4 introduces image identity. This must be revisited when image sources are modeled.
+## Overlay calibration
+- Key format: `overlayCalib:<imageId>`
+- Current placeholder imageId: `demo` (until ImageSource is available).
 
-## Migration table
-Legacy keys are migrated once at boot (idempotent):
+## Uploaded overlay image
+- `3dcm:v1:overlay.imageId` (name:size:lastModified)
+- `3dcm:v1:overlay.imageData` (data URL)
+- `3dcm:v1:overlay.imageMeta` (width/height/name/size/lastModified)
 
-| Legacy key | New key |
-| --- | --- |
-| `tadhgCityOverlayCalib` | `3dcm:v1:overlayCalib:demo` |
-| `tadhgOverlayPanelCollapsed` | `3dcm:v1:ui.overlayPanelCollapsed` |
-
-Migration rules:
-- If the new key exists, legacy is ignored.
-- If legacy exists and new missing, legacy is copied into the new key.
-- Legacy keys are not removed (safe, reversible).
-
-## Opt-in persisted settings (write on user change only)
-- `3dcm:v1:editor.snapGrid`
-- `3dcm:v1:editor.snapPixels`
-- `3dcm:v1:editor.pixelStep`
-- `3dcm:v1:traffic.maxCars`
-- `3dcm:v1:traffic.speedScale`
-- `3dcm:v1:blueprint.opacity`
-- `3dcm:v1:blueprint.showLabels`
-
-Defaults remain unchanged when keys are absent.
-
-## Storage implementation
-All localStorage access is centralized in:
-- `src/persistence/StateStore.js`
-- `src/persistence/Migrations.js`
+Notes:
+- No blobs stored; data URL only.
+- Defaults unchanged if no upload is present.

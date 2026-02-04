@@ -38,6 +38,21 @@
 - Purpose: Persist blueprint preview labels toggle.
 - Where used: city-sim.html:958, city-sim.html:6251, city-sim.html:6373
 
+## 3dcm:v1:overlay.imageId
+- Purpose: Persist uploaded overlay image identifier.
+- Where used: src/scanner/ImageSource.js
+- Notes: Derived from name:size:lastModified.
+
+## 3dcm:v1:overlay.imageData
+- Purpose: Persist uploaded overlay image data URL.
+- Where used: src/scanner/ImageSource.js
+- Notes: Base64 data URL; absent when no upload.
+
+## 3dcm:v1:overlay.imageMeta
+- Purpose: Persist uploaded overlay image metadata.
+- Where used: src/scanner/ImageSource.js
+- Notes: Width/height/name/size/lastModified.
+
 # Legacy keys (migrated)
 
 ## tadhgCityOverlayCalib

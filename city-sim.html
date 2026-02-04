@@ -533,6 +533,9 @@
       <button class="btn" id="blueprintCopy" style="flex: 1; padding: 6px;">Copy JSON</button>
       <button class="btn" id="blueprintValidate" style="flex: 1; padding: 6px;">Validate</button>
     </div>
+    <div class="overlay-actions">
+      <button class="btn" id="overlayUpload" style="flex: 1; padding: 6px;">Upload Map</button>
+    </div>
     <textarea id="blueprintJson" placeholder="Paste blueprint JSON here"></textarea>
     <div id="blueprintStatus" class="overlay-help">Blueprint status: loaded from file.</div>
     <hr style="border: none; border-top: 1px solid rgba(100, 200, 255, 0.2); margin: 10px 0;" />
@@ -748,6 +751,7 @@
     import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
     import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
     import { MapCoordMapper, createMapOverlay } from './src/mapOverlay.js';
+    import { createOverlayLayer } from './src/overlay/OverlayLayer.js';
     import {
       MAP_WIDTH,
       MAP_HEIGHT,
@@ -786,7 +790,19 @@
     import { normalizeBlueprint } from './src/core/BlueprintNormalizer.js';
     import { BlueprintModel } from './src/core/BlueprintModel.js';
     import { pixelToOverlayLocal, overlayLocalToPixel } from './src/core/CoordinateMapper.js';
-    import { computeOverlayDrift, overlayLocalToWorld, worldToOverlayLocal } from './src/core/OverlayTransform.js';
+    import { computeOverlayDrift } from './src/core/OverlayTransform.js';
+    import {
+      loadFromStore as loadOverlayImageFromStore,
+      getDataURL as getOverlayImageDataURL,
+      getImageId as getOverlayImageId,
+      getImageMeta as getOverlayImageMeta,
+      setFromFile as setOverlayImageFromFile
+    } from './src/scanner/ImageSource.js';
+    import {
+      createBlueprintPreviewGroups,
+      buildBlueprintPreview,
+      clearBlueprintPreview
+    } from './src/render/BlueprintPreviewRenderer.js';
     
     // ============================================
     // CONFIGURATION
@@ -922,6 +938,9 @@ let mapOverlayGroup = null;
 let mapOverlayMesh = null;
 let overlayDimmer = null;
 let mapCoordMapper = null;
+let mapOverlayImgW = MAP_OVERLAY_IMG_W;
+let mapOverlayImgH = MAP_OVERLAY_IMG_H;
+let overlayLayer = null;
 let probeMarker = null;
 let overlaySettings = null;
 let overlayBounds = null;
@@ -931,6 +950,7 @@ let blueprintOutlineGroup = null;
 let blueprintMeshGroup = null;
 let blueprintCenterlineGroup = null;
 let blueprintOffsetDebugGroup = null;
+let blueprintPreviewGroups = null;
 let editorGroup = null;
 let editorDraftLine = null;
 let editorDraftGlowLine = null;
@@ -1184,8 +1204,8 @@ function validateBlueprint(data) {
         blueprintData,
         mapCoordMapper,
         mapOverlayGroup,
-        mapOverlayImgW: MAP_OVERLAY_IMG_W,
-        mapOverlayImgH: MAP_OVERLAY_IMG_H,
+        mapOverlayImgW: mapOverlayImgW,
+        mapOverlayImgH: mapOverlayImgH,
         overlayPxToWorld,
         overlayWorldToPx,
         renderFps: RENDER_FPS,
@@ -1224,25 +1244,18 @@ function validateBlueprint(data) {
 
     // Coordinate contract: image (0,0) top-left; world (0,0) center; +X right, +Z down.
     function overlayWorldToPx(x, z) {
-      if (!mapCoordMapper || !mapOverlayGroup) return null;
-      const local = worldToOverlayLocal({ x, y: 0, z }, mapOverlayGroup);
-      if (!local) return null;
-      return overlayLocalToPixel({ x: local.x, z: local.z }, mapCoordMapper);
+      if (!overlayLayer) return null;
+      return overlayLayer.overlayWorldToPx?.(x, z) ?? null;
     }
 
     function overlayPxToWorld(px, py, y = 0) {
-      if (!mapCoordMapper || !mapOverlayGroup) return null;
-      const local = pixelToOverlayLocal(px, py, mapCoordMapper);
-      if (!local) return null;
-      return overlayLocalToWorld({ x: local.x, z: local.z }, mapOverlayGroup, y);
+      if (!overlayLayer) return null;
+      return overlayLayer.overlayPxToWorld?.(px, py, y) ?? null;
     }
 
     function verifyOverlayMapping() {
-      if (!mapCoordMapper || !mapOverlayGroup) return;
-      const drift = computeOverlayDrift({
-        dims: mapCoordMapper,
-        group: mapOverlayGroup
-      });
+      if (!overlayLayer) return;
+      const drift = overlayLayer.verifyMapping?.();
       if (!drift) return;
       drift.samples.forEach((sample, idx) => {
         if (sample.dx > drift.epsPx || sample.dy > drift.epsPx) {
@@ -1272,6 +1285,11 @@ function validateBlueprint(data) {
       if (blueprintOffsetDebugGroup) {
         blueprintOffsetDebugGroup.visible = allowed && editorState.debugRoadOffsets;
       }
+    }
+
+    function applyOverlayCalibKey() {
+      const imageId = getOverlayImageId() || PERSISTENCE_IMAGE_ID;
+      PERSIST_KEYS.overlayCalib = `overlayCalib:${imageId}`;
     }
 
     function syncBlueprintRootToOverlay() {
@@ -1340,25 +1358,12 @@ function validateBlueprint(data) {
       updateLineResolution(overlayBounds);
       mapOverlayGroup.add(overlayBounds);
 
-      blueprintOutlineGroup = new THREE.Group();
-      blueprintOutlineGroup.name = 'BlueprintOutlines';
-      mapOverlayGroup.add(blueprintOutlineGroup);
-
-      blueprintMeshGroup = new THREE.Group();
-      blueprintMeshGroup.name = 'BlueprintMeshes';
-      mapOverlayGroup.add(blueprintMeshGroup);
-
-      blueprintLabelGroup = new THREE.Group();
-      blueprintLabelGroup.name = 'BlueprintLabels';
-      mapOverlayGroup.add(blueprintLabelGroup);
-
-      blueprintCenterlineGroup = new THREE.Group();
-      blueprintCenterlineGroup.name = 'RoadCenterlines';
-      mapOverlayGroup.add(blueprintCenterlineGroup);
-
-      blueprintOffsetDebugGroup = new THREE.Group();
-      blueprintOffsetDebugGroup.name = 'RoadOffsetDebug';
-      mapOverlayGroup.add(blueprintOffsetDebugGroup);
+      blueprintPreviewGroups = createBlueprintPreviewGroups({ THREE, mapOverlayGroup });
+      blueprintOutlineGroup = blueprintPreviewGroups.outline;
+      blueprintMeshGroup = blueprintPreviewGroups.meshes;
+      blueprintLabelGroup = blueprintPreviewGroups.labels;
+      blueprintCenterlineGroup = blueprintPreviewGroups.centerlines;
+      blueprintOffsetDebugGroup = blueprintPreviewGroups.offsetDebug;
     }
 
     function setBlueprintStatus(text, ok = true) {
@@ -1391,272 +1396,35 @@ function validateBlueprint(data) {
     }
 
     function buildBlueprintFromData(data) {
-      if (!data) return;
-      if (!blueprintOutlineGroup || !blueprintMeshGroup) return;
-      resetGroup(blueprintOutlineGroup);
-      resetGroup(blueprintMeshGroup);
-      if (blueprintLabelGroup) resetGroup(blueprintLabelGroup);
-      if (blueprintCenterlineGroup) resetGroup(blueprintCenterlineGroup);
-      if (blueprintOffsetDebugGroup) resetGroup(blueprintOffsetDebugGroup);
-
-      const lineOpacity = blueprintPreviewSettings.opacity;
-      const baseOutlineMat = new THREE.LineBasicMaterial({ color: 0x00f0ff, transparent: true, opacity: lineOpacity });
-      baseOutlineMat.depthTest = false;
-      const landFillMat = new THREE.MeshBasicMaterial({
-        color: COLORS.land,
-        transparent: true,
-        opacity: 0.18 * blueprintPreviewSettings.opacity,
-        depthWrite: false,
-        depthTest: false,
-        side: THREE.DoubleSide
+      buildBlueprintPreview({
+        THREE,
+        data,
+        groups: blueprintPreviewGroups || {
+          outline: blueprintOutlineGroup,
+          meshes: blueprintMeshGroup,
+          labels: blueprintLabelGroup,
+          centerlines: blueprintCenterlineGroup,
+          offsetDebug: blueprintOffsetDebugGroup
+        },
+        Y,
+        COLORS,
+        POI_COLORS,
+        LEGEND_LINE_COLORS,
+        TRANSIT_STYLES,
+        blueprintPreviewSettings,
+        editorState,
+        ROAD_JOIN_SETTINGS,
+        getRenderPolygonPoints,
+        getRenderPolylinePoints,
+        getLineKind,
+        getRoadLineStyle,
+        isTransitKind,
+        computeOffsetRails,
+        normalizeTypeCode,
+        centroidNorm,
+        updateDebugVisibility,
+        resetGroup
       });
-      const beachFillMat = new THREE.MeshBasicMaterial({
-        color: COLORS.beach,
-        transparent: true,
-        opacity: 0.18 * blueprintPreviewSettings.opacity,
-        depthWrite: false,
-        depthTest: false,
-        side: THREE.DoubleSide
-      });
-      const seaFillMat = new THREE.MeshBasicMaterial({
-        color: COLORS.sea,
-        transparent: true,
-        opacity: 0.16 * blueprintPreviewSettings.opacity,
-        depthWrite: false,
-        depthTest: false,
-        side: THREE.DoubleSide
-      });
-      const roadFillMat = new THREE.MeshBasicMaterial({
-        color: 0x222222,
-        transparent: true,
-        opacity: 0.22 * blueprintPreviewSettings.opacity,
-        depthWrite: false,
-        depthTest: false,
-        side: THREE.DoubleSide
-      });
-
-      const makeShapeMesh = (points, material, y) => {
-        if (!points || points.length < 3) return null;
-        const shape = new THREE.Shape(points.map(p => new THREE.Vector2(p[0], p[1])));
-        const geometry = new THREE.ShapeGeometry(shape);
-        geometry.rotateX(Math.PI / 2);
-        const mesh = new THREE.Mesh(geometry, material);
-        mesh.position.y = y;
-        mesh.renderOrder = 997;
-        return mesh;
-      };
-
-      const makeOutline = (points, color, y) => {
-        if (!points || points.length < 2) return null;
-        const pts = points.map(p => new THREE.Vector3(p[0], y, p[1]));
-        const geometry = new THREE.BufferGeometry().setFromPoints(pts);
-        const mat = baseOutlineMat.clone();
-        mat.color.setHex(color);
-        const line = new THREE.LineLoop(geometry, mat);
-        line.renderOrder = 999;
-        return line;
-      };
-
-      (data.coastlines || []).forEach(entry => {
-        const points = getRenderPolygonPoints(entry);
-        const fillBase = Y.overlay + 0.02;
-        const mesh = makeShapeMesh(points, landFillMat, fillBase);
-        if (mesh) blueprintMeshGroup.add(mesh);
-        const outline = makeOutline(points, 0x00f0ff, Y.overlay + 0.05);
-        if (outline) blueprintOutlineGroup.add(outline);
-      });
-
-      (data.beaches || []).forEach(entry => {
-        const points = getRenderPolygonPoints(entry);
-        const mesh = makeShapeMesh(points, beachFillMat, Y.overlay + 0.019);
-        if (mesh) blueprintMeshGroup.add(mesh);
-        const outline = makeOutline(points, 0xffd27a, Y.overlay + 0.048);
-        if (outline) blueprintOutlineGroup.add(outline);
-      });
-
-      (data.sea || []).forEach(entry => {
-        const points = getRenderPolygonPoints(entry);
-        const mesh = makeShapeMesh(points, seaFillMat, Y.overlay + 0.018);
-        if (mesh) blueprintMeshGroup.add(mesh);
-        const outline = makeOutline(points, 0x3aa6ff, Y.overlay + 0.047);
-        if (outline) blueprintOutlineGroup.add(outline);
-      });
-
-      (data.roads || []).forEach(entry => {
-        if (entry.polygon) {
-          const points = getRenderPolygonPoints(entry);
-          const fillBase = Y.overlay + 0.022;
-          const mesh = makeShapeMesh(points, roadFillMat, fillBase);
-          if (mesh) blueprintMeshGroup.add(mesh);
-          const outline = makeOutline(points, 0xffffff, Y.overlay + 0.055);
-          if (outline) blueprintOutlineGroup.add(outline);
-          return;
-        }
-        const renderPoints = getRenderPolylinePoints(entry);
-        if (!renderPoints || renderPoints.length < 2) return;
-        const kind = getLineKind(entry);
-        const style = getRoadLineStyle(kind);
-        const width = Number.isFinite(entry.width) ? entry.width : style.width;
-        if (editorState.debugRoadOffsets && !isTransitKind(kind) && blueprintOffsetDebugGroup) {
-          const rails = computeOffsetRails(renderPoints, width / 2, {
-            roundSegments: ROAD_JOIN_SETTINGS.roundSegments,
-            minAngle: ROAD_JOIN_SETTINGS.minAngle,
-            maxAngle: ROAD_JOIN_SETTINGS.maxAngle
-          });
-          const leftPts = rails.left.map(p => new THREE.Vector3(p[0], Y.overlay + 0.09, p[1]));
-          const rightPts = rails.right.map(p => new THREE.Vector3(p[0], Y.overlay + 0.09, p[1]));
-          const leftGeom = new THREE.BufferGeometry().setFromPoints(leftPts);
-          const rightGeom = new THREE.BufferGeometry().setFromPoints(rightPts);
-          const leftMat = new THREE.LineBasicMaterial({ color: 0x44ff88, transparent: true, opacity: 0.9 });
-          const rightMat = new THREE.LineBasicMaterial({ color: 0xff4dd2, transparent: true, opacity: 0.9 });
-          const leftLine = new THREE.Line(leftGeom, leftMat);
-          const rightLine = new THREE.Line(rightGeom, rightMat);
-          leftLine.renderOrder = 1002;
-          rightLine.renderOrder = 1002;
-          blueprintOffsetDebugGroup.add(leftLine);
-          blueprintOffsetDebugGroup.add(rightLine);
-
-          const modeColor = (mode) => {
-            if (mode === 'ROUND') return 0x55ff55;
-            if (mode === 'STRAIGHT') return 0x66bbff;
-            if (mode === 'SPLIT') return 0xff5a5a;
-            if (mode === 'CAP') return 0xffd65a;
-            return 0xffffff;
-          };
-          const dotGeo = new THREE.SphereGeometry(2.6, 10, 10);
-          rails.center.forEach((pt, idx) => {
-            const join = rails.joins[idx] || {};
-            const color = modeColor(join.mode);
-            const dot = new THREE.Mesh(dotGeo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.95, depthTest: false }));
-            dot.position.set(pt[0], Y.overlay + 0.095, pt[1]);
-            dot.renderOrder = 1004;
-            blueprintOffsetDebugGroup.add(dot);
-          });
-        }
-        const pts = renderPoints.map(p => new THREE.Vector3(p[0], Y.overlay + 0.055, p[1]));
-        const geometry = new THREE.BufferGeometry().setFromPoints(pts);
-        let mat = null;
-        if (isTransitKind(kind)) {
-          const style = TRANSIT_STYLES[kind] || TRANSIT_STYLES.METRO;
-          mat = new THREE.LineBasicMaterial({ color: style.color });
-        } else {
-          mat = new THREE.LineBasicMaterial({ color: style.outline, transparent: true, opacity: lineOpacity });
-        }
-        mat.depthTest = false;
-        const line = new THREE.Line(geometry, mat);
-        line.renderOrder = 999;
-        blueprintOutlineGroup.add(line);
-
-        if (kind === 'METRO') {
-          const stations = Array.isArray(entry.stations)
-            ? entry.stations
-            : (data.pois || [])
-              .filter(poi => poi.type === 'METRO_STATION')
-              .map(poi => poi.position);
-          const stationGeo = new THREE.SphereGeometry(3, 10, 10);
-          stations.forEach((pos) => {
-            if (!pos || pos.length < 2) return;
-            const station = new THREE.Mesh(stationGeo, new THREE.MeshBasicMaterial({ color: TRANSIT_STYLES.METRO.color }));
-            station.position.set(pos[0], Y.overlay + 0.06, pos[1]);
-            blueprintOutlineGroup.add(station);
-          });
-        }
-      });
-
-      (data.buildings || []).forEach(entry => {
-        const points = getRenderPolygonPoints(entry);
-        const code = normalizeTypeCode(entry.typeCode);
-        const color = LEGEND_LINE_COLORS[code] ?? 0xffffff;
-        const zoneMat = new THREE.MeshBasicMaterial({
-          color,
-          transparent: true,
-          opacity: 0.14 * blueprintPreviewSettings.opacity,
-          depthWrite: false,
-          depthTest: false,
-          side: THREE.DoubleSide
-        });
-        const mesh = makeShapeMesh(points, zoneMat, Y.overlay + 0.024);
-        if (mesh) blueprintMeshGroup.add(mesh);
-        const outline = makeOutline(points, color, Y.overlay + 0.065);
-        if (outline) blueprintOutlineGroup.add(outline);
-      });
-
-      (data.zones || []).forEach(entry => {
-        const points = getRenderPolygonPoints(entry);
-        const code = normalizeTypeCode(entry.typeCode);
-        const color = LEGEND_LINE_COLORS[code] ?? 0xffffff;
-        const zoneMat = new THREE.MeshBasicMaterial({
-          color,
-          transparent: true,
-          opacity: 0.18 * blueprintPreviewSettings.opacity,
-          depthWrite: false,
-          depthTest: false,
-          side: THREE.DoubleSide
-        });
-        const mesh = makeShapeMesh(points, zoneMat, Y.overlay + 0.023);
-        if (mesh) blueprintMeshGroup.add(mesh);
-        const outline = makeOutline(points, color, Y.overlay + 0.06);
-        if (outline) blueprintOutlineGroup.add(outline);
-      });
-
-      const poiGeo = new THREE.SphereGeometry(4, 10, 10);
-      (data.pois || []).forEach(entry => {
-        if (!entry.position || entry.position.length < 2) return;
-        const color = POI_COLORS[entry.type] ?? 0x00ff88;
-        const marker = new THREE.Mesh(poiGeo, new THREE.MeshBasicMaterial({ color }));
-        marker.position.set(entry.position[0], Y.overlay + 0.08, entry.position[1]);
-        blueprintMeshGroup.add(marker);
-      });
-
-      if (blueprintPreviewSettings.showLabels) {
-        addBlueprintLabels(data);
-      }
-
-      updateDebugVisibility();
-    }
-
-    function createLabelSprite(text) {
-      const canvas = document.createElement('canvas');
-      const size = 192;
-      canvas.width = size;
-      canvas.height = size;
-      const ctx = canvas.getContext('2d');
-      ctx.clearRect(0, 0, size, size);
-      ctx.fillStyle = 'rgba(12, 16, 30, 0.8)';
-      ctx.beginPath();
-      ctx.arc(size / 2, size / 2, size * 0.38, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = '#64c8ff';
-      ctx.lineWidth = 4;
-      ctx.stroke();
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 104px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(text, size / 2, size / 2 + 2);
-
-      const texture = new THREE.CanvasTexture(canvas);
-      texture.colorSpace = THREE.SRGBColorSpace;
-      const material = new THREE.SpriteMaterial({ map: texture, transparent: true, opacity: 0.95, depthTest: false });
-      const sprite = new THREE.Sprite(material);
-      sprite.scale.set(46, 46, 1);
-      sprite.renderOrder = 1000;
-      return sprite;
-    }
-
-    function addBlueprintLabels(data) {
-      if (!blueprintLabelGroup) return;
-      const addLabel = (entry, yOffset) => {
-        if (!entry?.polygon || !entry.typeCode) return;
-        const code = normalizeTypeCode(entry.typeCode);
-        // centroidNorm works for any polygon coordinate space.
-        const centroid = centroidNorm(entry.polygon);
-        const sprite = createLabelSprite(code);
-        sprite.position.set(centroid[0], Y.overlay + yOffset, centroid[1]);
-        blueprintLabelGroup.add(sprite);
-      };
-
-      (data.buildings || []).forEach(entry => addLabel(entry, 0.095));
     }
 
     function clearBlueprintCity() {
@@ -5670,53 +5438,42 @@ function validateBlueprint(data) {
         
         // Map overlay
         try {
-          const overlayResult = await createMapOverlay({
-            textureUrl: './Master_AI_MAP.png',
-            imgW: MAP_OVERLAY_IMG_W,
-            imgH: MAP_OVERLAY_IMG_H,
+          loadOverlayImageFromStore();
+          const uploadedDataUrl = getOverlayImageDataURL();
+          const uploadedMeta = getOverlayImageMeta();
+          mapOverlayImgW = uploadedMeta?.width || MAP_OVERLAY_IMG_W;
+          mapOverlayImgH = uploadedMeta?.height || MAP_OVERLAY_IMG_H;
+
+          mapOverlayGroup = new THREE.Group();
+          mapOverlayGroup.name = 'MapOverlayGroup';
+          LAYERS.overlay.add(mapOverlayGroup);
+
+          overlayLayer = await createOverlayLayer({
+            renderer,
+            textureUrl: uploadedDataUrl || './Master_AI_MAP.png',
+            imgW: mapOverlayImgW,
+            imgH: mapOverlayImgH,
             worldW: MAP_OVERLAY_WORLD_W,
             worldH: MAP_OVERLAY_WORLD_H,
             y: Y.overlay,
             opacity: 0.9,
             visible: true,
             renderOnTop: false,
-            renderer: renderer
+            dimmerOpacity: 0,
+            overlayGroup: mapOverlayGroup,
+            syncBlueprintRoot: syncBlueprintRootToOverlay,
+            updateLineResolution,
+            blueprintGroups: { overlayBounds }
           });
-          
-          mapOverlayGroup = new THREE.Group();
-          mapOverlayGroup.name = 'MapOverlayGroup';
-          mapOverlayMesh = overlayResult.mesh;
-          mapOverlayMesh.raycast = () => null;
-          mapOverlayGroup.add(mapOverlayMesh);
-          const dimmerMat = new THREE.MeshBasicMaterial({
-            color: 0x000000,
-            transparent: true,
-            opacity: 0,
-            depthWrite: false
-          });
-          dimmerMat.depthTest = false;
-          overlayDimmer = new THREE.Mesh(
-            new THREE.PlaneGeometry(MAP_OVERLAY_WORLD_W, MAP_OVERLAY_WORLD_H),
-            dimmerMat
-          );
-          overlayDimmer.geometry.rotateX(-Math.PI / 2);
-          overlayDimmer.position.y = Y.overlay + 0.001;
-          overlayDimmer.renderOrder = 2;
-          mapOverlayGroup.add(overlayDimmer);
-          LAYERS.overlay.add(mapOverlayGroup);
+
+          mapOverlayMesh = overlayLayer.mapOverlayMesh;
+          overlayDimmer = overlayLayer.overlayDimmer;
+          mapCoordMapper = overlayLayer.mapCoordMapper;
+
           syncBlueprintRootToOverlay();
           exposeDebugState();
-          
-          // Create coordinate mapper
-          mapCoordMapper = new MapCoordMapper({
-            imgW: MAP_OVERLAY_IMG_W,
-            imgH: MAP_OVERLAY_IMG_H,
-            worldW: MAP_OVERLAY_WORLD_W,
-            worldH: MAP_OVERLAY_WORLD_H,
-            origin: new THREE.Vector3(0, 0, 0)
-          });
-          // Map orientation: image right is +X, image down is +Z (centered at world origin).
-          
+          applyOverlayCalibKey();
+
           // Setup overlay controls
           setupOverlayControls();
           setupDebugHelpers();
@@ -5725,7 +5482,7 @@ function validateBlueprint(data) {
           setupEditorControls();
           bindEditorEvents();
           await loadBlueprintData();
-          
+
           console.log('Map overlay loaded. coordMapper available for pixel-to-world conversion.');
         } catch (error) {
           console.warn('Failed to load map overlay:', error);
@@ -5789,6 +5546,7 @@ function validateBlueprint(data) {
       
       const loadSettings = () => {
         try {
+          applyOverlayCalibKey();
           const stored = getItem(PERSIST_KEYS.overlayCalib);
           if (stored) return normalizeOverlaySettings(stored);
         } catch (e) {
@@ -5799,6 +5557,7 @@ function validateBlueprint(data) {
       
       const saveSettings = () => {
         try {
+          applyOverlayCalibKey();
           setItem(PERSIST_KEYS.overlayCalib, overlaySettings);
         } catch (e) {
           console.warn('Failed to save overlay calibration:', e);
@@ -5974,6 +5733,7 @@ function validateBlueprint(data) {
       const saveBtn = document.getElementById('blueprintSave');
       const copyBtn = document.getElementById('blueprintCopy');
       const validateBtn = document.getElementById('blueprintValidate');
+      const overlayUploadBtn = document.getElementById('overlayUpload');
       const jsonField = document.getElementById('blueprintJson');
       const useCityToggle = document.getElementById('blueprintUseCity');
       const opacitySlider = document.getElementById('blueprintOpacity');
@@ -6078,6 +5838,62 @@ function validateBlueprint(data) {
           setBlueprintStatus('Blueprint validation: no data.', false);
         }
       });
+
+      if (overlayUploadBtn) {
+        const fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.accept = 'image/*';
+        fileInput.style.display = 'none';
+        overlayUploadBtn.insertAdjacentElement('afterend', fileInput);
+
+        overlayUploadBtn.addEventListener('click', () => {
+          fileInput.click();
+        });
+
+        fileInput.addEventListener('change', async (event) => {
+          const file = event.target.files?.[0];
+          if (!file) return;
+          try {
+            const result = await setOverlayImageFromFile(file);
+            if (!result) return;
+
+            mapOverlayImgW = result.meta?.width || MAP_OVERLAY_IMG_W;
+            mapOverlayImgH = result.meta?.height || MAP_OVERLAY_IMG_H;
+            applyOverlayCalibKey();
+
+            const overlayResult = await createOverlayLayer({
+              renderer,
+              textureUrl: result.dataUrl,
+              imgW: mapOverlayImgW,
+              imgH: mapOverlayImgH,
+              worldW: MAP_OVERLAY_WORLD_W,
+              worldH: MAP_OVERLAY_WORLD_H,
+              y: Y.overlay,
+              opacity: overlaySettings?.opacity ?? OVERLAY_DEFAULTS.opacity,
+              visible: overlaySettings?.visible ?? true,
+              renderOnTop: false,
+              dimmerOpacity: overlaySettings?.dimmer ?? OVERLAY_DEFAULTS.dimmer,
+              overlayGroup: mapOverlayGroup,
+              syncBlueprintRoot: syncBlueprintRootToOverlay,
+              updateLineResolution,
+              blueprintGroups: { overlayBounds }
+            });
+
+            if (mapOverlayMesh) mapOverlayGroup.remove(mapOverlayMesh);
+            if (overlayDimmer) mapOverlayGroup.remove(overlayDimmer);
+            mapOverlayMesh = overlayResult.mapOverlayMesh;
+            overlayDimmer = overlayResult.overlayDimmer;
+            mapCoordMapper = overlayResult.mapCoordMapper;
+            overlayLayer = overlayResult;
+            updateOverlayVisibility();
+            verifyOverlayMapping();
+          } catch (err) {
+            console.warn('Failed to load uploaded overlay:', err);
+          } finally {
+            fileInput.value = '';
+          }
+        });
+      }
 
       loadBtn.addEventListener('click', () => {
         const raw = jsonField.value.trim();
@@ -6456,7 +6272,7 @@ function validateBlueprint(data) {
       }
 
       if (editorState.snapPixels && mapCoordMapper) {
-        const px = overlayLocalToPixel({ x, z }, mapCoordMapper);
+          const px = overlayLocalToPixel({ x, z }, mapCoordMapper);
         const step = Math.max(1, editorState.pixelStep);
         const snappedPx = {
           px: Math.round(px.px / step) * step,
