@@ -3,8 +3,8 @@
 ## Metadata
 - base_branch: refactor/phase4-overlay-coords
 - base_commit: 2eeedf9
-- phase_end_commit: b9b4c67
-- packet_commit: e6edf1c
+- phase_end_commit: 6d16986
+- packet_commit: PENDING
 
 ## Phase checklist
 - ✅ ImageSource added (upload + persistence + maxEdgePx normalization)
@@ -18,12 +18,14 @@
 ### git status -sb
 ```
 ## refactor/phase4b-overlay-system
-?? docs/ai/review_packet_phase4_1.md
 ```
 
 ### git log --oneline --decorate -n 20
 ```
-b9b4c67 (HEAD -> refactor/phase4b-overlay-system) feat(phase4b): add ImageSource + OverlayLayer + preview renderer
+6d16986 (HEAD -> refactor/phase4b-overlay-system) fix(phase4b): align overlay migration + cleanup import
+b795c24 docs(ai): update phase4b packet_commit
+e6edf1c docs(ai): add review packet for phase 4b
+b9b4c67 feat(phase4b): add ImageSource + OverlayLayer + preview renderer
 2eeedf9 (refactor/phase4-overlay-coords) docs(ai): fix packet_commit for phase 4
 061885e docs(ai): add review packet for phase 4
 5676069 feat(phase4): add snapshot helpers + coordinate mapping modules
@@ -40,42 +42,106 @@ b4f5e40 docs(phase1.1): add review packet
 8feef0e docs(phase1): add phase1 review packet
 67e5864 (origin/refactor/phase1-config-utils) refactor(phase1): extract config+utils (verbatim)
 f9af069 chore(phase1): add src/ skeleton (config/utils/ui)
-74af2d4 docs(phase1): clean phase0 checklist to match v6
-d9263da (refactor/phase0a-probe-alignment) chore(phase0): align probe output + gate debug state
-3dff6a2 (refactor/phase0-instrumentation) chore(phase0): add gated refactor parity probe
 ```
 
-### git diff --stat 2eeedf9...b9b4c67
+### git diff --stat 2eeedf9...6d16986
 ```
- city-sim.html                          | 496 +++++++++++----------------------
+ city-sim.html                          | 498 +++++++++++----------------------
  docs/LOCALSTORAGE_KEYS.md              |  15 +
  docs/PERSISTENCE.md                    |  49 +---
+ docs/ai/review_packet_phase4_1.md      |  94 +++++++
  src/overlay/OverlayLayer.js            | 100 +++++++
  src/render/BlueprintPreviewRenderer.js | 323 +++++++++++++++++++++
  src/scanner/ImageSource.js             | 137 +++++++++
- 6 files changed, 746 insertions(+), 374 deletions(-)
+ 7 files changed, 841 insertions(+), 375 deletions(-)
 ```
 
-### git diff --check 2eeedf9...b9b4c67
+### git diff --check 2eeedf9...6d16986
 ```
 ```
 
-### git diff -U15 2eeedf9...b9b4c67 -- $FOCUS_PATHS
+### git show -U15 6d16986 -- $FOCUS_PATHS
 ```
-(diff output omitted for brevity in this summary — see command run in terminal)
+commit 6d16986b8539ff1343bb9daf2307c0d77ea29fd1
+Author: xavstack <your.email@example.com>
+Date:   Wed Feb 4 14:27:54 2026 +0100
+
+    fix(phase4b): align overlay migration + cleanup import
+
+diff --git a/city-sim.html b/city-sim.html
+index 268c6cd..4d128dd 100644
+--- a/city-sim.html
++++ b/city-sim.html
+@@ -778,31 +778,30 @@
+     import {
+       LEGEND_LINE_COLORS,
+       LEGEND_TYPE_MAP,
+       ALLOWED_TYPE_CODES
+     } from './src/config/legendRules.js';
+     import { RENDER_FPS } from './src/config/renderPresets.js';
+     import { clampNumber, rng } from './src/utils/Math.js';
+     import { pointInPolygon, centroidNorm, distancePointToSegment } from './src/utils/GeometryMath.js';
+     import { disposeObject3D } from './src/utils/Dispose.js';
+     import { getItem, setItem } from './src/persistence/StateStore.js';
+     import { runMigrations } from './src/persistence/Migrations.js';
+     import { validateBlueprint as validateBlueprintCore } from './src/core/BlueprintValidator.js';
+     import { normalizeBlueprint } from './src/core/BlueprintNormalizer.js';
+     import { BlueprintModel } from './src/core/BlueprintModel.js';
+     import { pixelToOverlayLocal, overlayLocalToPixel } from './src/core/CoordinateMapper.js';
+-    import { computeOverlayDrift } from './src/core/OverlayTransform.js';
+     import {
+       loadFromStore as loadOverlayImageFromStore,
+       getDataURL as getOverlayImageDataURL,
+       getImageId as getOverlayImageId,
+       getImageMeta as getOverlayImageMeta,
+       setFromFile as setOverlayImageFromFile
+     } from './src/scanner/ImageSource.js';
+     import {
+       createBlueprintPreviewGroups,
+       buildBlueprintPreview,
+       clearBlueprintPreview
+     } from './src/render/BlueprintPreviewRenderer.js';
+@@ -5406,51 +5405,52 @@ function validateBlueprint(data) {
+       updateLineResolution(overlayBounds);
+     });
+@@
+-        runMigrations({ imageId: PERSISTENCE_IMAGE_ID });
++        loadOverlayImageFromStore();
++        const migrationImageId = getOverlayImageId() || PERSISTENCE_IMAGE_ID;
++        runMigrations({ imageId: migrationImageId });
+@@
+-          loadOverlayImageFromStore();
+           const uploadedDataUrl = getOverlayImageDataURL();
+           const uploadedMeta = getOverlayImageMeta();
+           mapOverlayImgW = uploadedMeta?.width || MAP_OVERLAY_IMG_W;
+           mapOverlayImgH = uploadedMeta?.height || MAP_OVERLAY_IMG_H;
+
+diff --git a/docs/PERSISTENCE.md b/docs/PERSISTENCE.md
+index 3f4cad0..3dbfd57 100644
+--- a/docs/PERSISTENCE.md
++++ b/docs/PERSISTENCE.md
+@@ -1,21 +1,21 @@
+ # Persistence Strategy
+@@
+-## Overlay calibration
+-- Key format: `overlayCalib:<imageId>`
+-- Current placeholder imageId: `demo` (until ImageSource is available).
++## Overlay calibration
++- Key format: `overlayCalib:<imageId>`
++- Placeholder imageId: `demo` when no uploaded image is present.
 ```
 
 ## Guardrail greps
 ```
-1180:    const probeEnabled = new URLSearchParams(location.search).has('refactorProbe');
-1217:      import('./tools/refactorProbe.js').then(({ buildRefactorProbeJSON }) => {
+1181:    const probeEnabled = new URLSearchParams(location.search).has('refactorProbe');
+1235:      import('./tools/refactorProbe.js').then(({ buildRefactorProbeJSON }) => {
 ```
 ```
-1217:      import('./tools/refactorProbe.js').then(({ buildRefactorProbeJSON }) => {
+1235:      import('./tools/refactorProbe.js').then(({ buildRefactorProbeJSON }) => {
 ```
 ```
-src/core/CoordinateMapper.js:1:export function pixelToOverlayLocal(px, py, dims) {
-src/core/CoordinateMapper.js:14:export function overlayLocalToPixel(local, dims) {
+city-sim.html:792:    import { pixelToOverlayLocal, overlayLocalToPixel } from './src/core/CoordinateMapper.js';
+src/core/OverlayTransform.js:2:import { pixelToOverlayLocal, overlayLocalToPixel } from './CoordinateMapper.js';
 ```
 
 ## Probe summary
