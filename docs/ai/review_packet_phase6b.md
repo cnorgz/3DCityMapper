@@ -4,6 +4,7 @@
 - base_commit: a8d7fe8
 - phase_end_commit: b932578
 - packet_commit: 2925842
+- NOTE: packet_commit may not match due to self-reference; see git log section for authoritative SHA.
 
 ## Phase checklist
 - ✅ Extracted terrain generation into src/terrain/TerrainGenerator.js

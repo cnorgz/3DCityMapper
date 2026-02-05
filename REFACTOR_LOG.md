@@ -76,7 +76,7 @@ Probe check (post-extraction):
 
 - branch: refactor/phase6b-terrain-layer
 - base_commit: a8d7fe8
-- phase_end_commit: b3e269d
+- phase_end_commit: b932578
 
 Probe check (post-extraction):
 - capture_method: codex-mcp
