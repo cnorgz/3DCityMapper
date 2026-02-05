@@ -807,6 +807,8 @@
     import { getSharedWindowMaterials, getSharedWindowGeometry } from './src/render/MaterialLibrary.js';
     import { createLegacyTerrain } from './src/render/TerrainLayer.js';
     import { buildLegacyTerrainDefs } from './src/terrain/TerrainGenerator.js';
+    import { createLegacyRoads } from './src/render/RoadLayer.js';
+    import { buildLegacyRoadDefs } from './src/geometry/RoadGenerator.js';
     import { createZoneMeshes } from './src/render/ZoneLayer.js';
     
     // ============================================
@@ -3915,76 +3917,15 @@ function validateBlueprint(data) {
     
     // Create roads between zones
     function createRoads() {
-      const roadMat = new THREE.MeshStandardMaterial({ 
-        color: 0x404040,
-        roughness: 0.9
+      const roadDefs = buildLegacyRoadDefs({ toWorld });
+      createLegacyRoads({
+        layer: LAYERS.roads,
+        defs: roadDefs,
+        Y,
+        THREE,
+        tmpObj: _tmpObj,
+        createCars
       });
-      
-      const sidewalkMat = new THREE.MeshStandardMaterial({ 
-        color: 0x707070,
-        roughness: 0.8
-      });
-      
-      // Roads placed in gaps between zone boundaries (streets on map)
-      // Horizontal roads at zone boundaries
-      const hRoadPositions = [0.06, 0.12, 0.22, 0.32, 0.44, 0.56, 0.70, 0.76, 0.92];
-      // Vertical roads at zone boundaries  
-      const vRoadPositions = [0.44, 0.50, 0.56, 0.62, 0.66, 0.72, 0.78, 0.82, 0.90];
-      
-      // Shared dash geometry and material (reused for all roads)
-      const dashGeo = new THREE.BoxGeometry(15, 0.1, 0.5);
-      const dashMat = new THREE.MeshStandardMaterial({ color: 0xdddd44 });
-      
-      // Create road segments that fill spaces between buildings
-      hRoadPositions.forEach(nz => {
-        const [, z] = toWorld(0.5, nz);
-        // Create road from coast to east edge
-        const [x1] = toWorld(0.40, 0);
-        const [x2] = toWorld(0.98, 0);
-        
-        // Road surface
-        const roadGeo = new THREE.BoxGeometry(x2 - x1, 0.3, 12);
-        const road = new THREE.Mesh(roadGeo, roadMat);
-        road.position.set((x1 + x2) / 2, Y.roads, z);
-        road.receiveShadow = true;
-        road.material.polygonOffset = true;
-        road.material.polygonOffsetFactor = -1;
-        road.material.polygonOffsetUnits = -1;
-        LAYERS.roads.add(road);
-        
-        // ✅ Instanced dashes: 1 draw call instead of 20+
-        const dashCount = 20;
-        const dashes = new THREE.InstancedMesh(dashGeo, dashMat, dashCount);
-        for (let i = 0; i < dashCount; i++) {
-          _tmpObj.position.set(x1 + 30 + i * 30, 1.05, z);
-          _tmpObj.rotation.set(0, 0, 0);
-          _tmpObj.updateMatrix();
-          dashes.setMatrixAt(i, _tmpObj.matrix);
-        }
-        dashes.instanceMatrix.needsUpdate = true;
-        dashes.castShadow = false;
-        dashes.receiveShadow = false;
-        LAYERS.roads.add(dashes);
-      });
-      
-      vRoadPositions.forEach(nx => {
-        const [x] = toWorld(nx, 0);
-        const [, z1] = toWorld(0, 0.02);
-        const [, z2] = toWorld(0, 0.96);
-        
-        // Road surface
-        const roadGeo = new THREE.BoxGeometry(12, 0.3, Math.abs(z2 - z1));
-        const road = new THREE.Mesh(roadGeo, roadMat);
-        road.position.set(x, Y.roads, (z1 + z2) / 2);
-        road.receiveShadow = true;
-        road.material.polygonOffset = true;
-        road.material.polygonOffsetFactor = -1;
-        road.material.polygonOffsetUnits = -1;
-        LAYERS.roads.add(road);
-      });
-      
-      // Add some cars
-      createCars();
     }
     
     // Cars with headlights that drive on roads
