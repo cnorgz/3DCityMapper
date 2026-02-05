@@ -807,6 +807,7 @@
     import { getSharedWindowMaterials, getSharedWindowGeometry } from './src/render/MaterialLibrary.js';
     import { createLegacyTerrain } from './src/render/TerrainLayer.js';
     import { buildLegacyTerrainDefs } from './src/terrain/TerrainGenerator.js';
+    import { createZoneMeshes } from './src/render/ZoneLayer.js';
     
     // ============================================
     // CONFIGURATION
@@ -3308,24 +3309,22 @@ function validateBlueprint(data) {
       });
       createLegacyTerrain({ layer: LAYERS.terrain, createPolygon, defs: terrainDefs });
       
-      // Island zones
-      Object.entries(islandZones).forEach(([key, zone]) => {
-        const mesh = createPolygon(zone.points, zone.color, Y.zones);
-        mesh.name = key;
-        mesh.userData = { ...zone };
-        LAYERS.zones.add(mesh);
-        zones.push(mesh);
-        ZONE_REGISTRY[key] = { zoneMesh: mesh, buildingGroup: null, props: [] };
+      createZoneMeshes({
+        layer: LAYERS.zones,
+        zoneDefs: islandZones,
+        zones,
+        registry: ZONE_REGISTRY,
+        createPolygon,
+        y: Y.zones
       });
       
-      // Mainland zones
-      Object.entries(mainlandZones).forEach(([key, zone]) => {
-        const mesh = createPolygon(zone.points, zone.color, Y.zones);
-        mesh.name = key;
-        mesh.userData = { ...zone };
-        LAYERS.zones.add(mesh);
-        zones.push(mesh);
-        ZONE_REGISTRY[key] = { zoneMesh: mesh, buildingGroup: null, props: [] };
+      createZoneMeshes({
+        layer: LAYERS.zones,
+        zoneDefs: mainlandZones,
+        zones,
+        registry: ZONE_REGISTRY,
+        createPolygon,
+        y: Y.zones
       });
       
       // Bridge
