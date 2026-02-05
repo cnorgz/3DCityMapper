@@ -99,3 +99,13 @@ Probe check (post-extraction):
 - sceneCounts: { meshCount: 631, lineCount: 6, pointCount: 0, groupCount: 206, geometryCount: 443, materialCount: 345 }
 - blueprintCounts: { beaches: 0, buildings: 0, coastlines: 1, pois: 1, roads: 2, sea: 0, transit: 0, zones: 1 }
 - overlayDrift: { ok: true, epsPx: 0.05, maxDriftPx: 0 }
+
+## Phase 6d – Probe hash policy (triage)
+
+- capture_method: codex-mcp
+- url: http://localhost:8000/city-sim.html?refactorProbe=1
+- full_sha256: c7bd5ec46ec368b72220071bedb9bc07fa29edcb66992c8701fe9ca14069c2ab
+- gate_sha256: 9e81fb032829d9398f8c3b61eb83027c56b3aee9f026cbdf6a5a6241d206a3c5
+- gate_fields: [sceneCounts, blueprintCounts, overlayDrift]
+- volatile_top_level_keys: []
+- note: full hash may vary; decision uses gate hash; counts matched baseline
