@@ -809,6 +809,8 @@
     import { buildLegacyTerrainDefs } from './src/terrain/TerrainGenerator.js';
     import { createLegacyRoads } from './src/render/RoadLayer.js';
     import { buildLegacyRoadDefs } from './src/geometry/RoadGenerator.js';
+    import { buildLegacyBuildingDefs } from './src/geometry/BuildingGenerator.js';
+    import { createLegacyBuildings } from './src/render/BuildingLayer.js';
     import { createZoneMeshes } from './src/render/ZoneLayer.js';
     
     // ============================================
@@ -3363,30 +3365,15 @@ function validateBlueprint(data) {
       };
       
       const zoneByName = Object.fromEntries(zones.map(z => [z.name, z]));
-      
-      zones.forEach(zoneMesh => {
-        const data = zoneMesh.userData;
-        // Skip zones that don't need buildings or have custom implementations
-        if (!data.type || data.type === 'garden' || data.type === 'port' || data.type === 'stadium' || data.type === 'skyscraper') return;
-        
-        // Use height from zone data if available, otherwise use type default
-        let height = data.height !== undefined ? data.height : (heights[data.type] || 20);
-        
-        // Skip if height is 0 or very small
-        if (height < 5) return;
-        
-        // Create building group with attached windows
-        const buildingGroup = createBuildingWithWindows(data.points, data.color, height, data.type);
-        buildingGroup.name = zoneMesh.name + '_building';
-        buildingGroup.userData = data;
-        buildingGroup.position.y = Y.buildings;
-        LAYERS.buildings.add(buildingGroup);
-        buildings.push(buildingGroup);
-        buildingGroups.push(buildingGroup);
-        
-        // Update registry
-        const entry = ZONE_REGISTRY[zoneMesh.name];
-        if (entry) entry.buildingGroup = buildingGroup;
+      const buildingDefs = buildLegacyBuildingDefs({ zones, heights });
+      createLegacyBuildings({
+        layer: LAYERS.buildings,
+        defs: buildingDefs,
+        createBuildingWithWindows,
+        buildings,
+        buildingGroups,
+        registry: ZONE_REGISTRY,
+        Y
       });
       
       // Special buildings driven by zone centroids when available
