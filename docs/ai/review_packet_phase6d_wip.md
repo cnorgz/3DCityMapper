@@ -17,6 +17,13 @@ Summary fields (latest run):
 {"sceneCounts":{"meshCount":631,"lineCount":6,"pointCount":0,"groupCount":206,"geometryCount":443,"materialCount":345},"blueprintCounts":{"beaches":0,"buildings":0,"coastlines":1,"pois":1,"roads":2,"sea":0,"transit":0,"zones":1},"overlayDrift":{"ok":true,"epsPx":0.05,"maxDriftPx":0}}
 ```
 
+Clean-tree probe (rev3 triage, new run):
+- LEN=3968 SHA256=1db55488f2ae68c57bb67e8783ec5d01eb2c80c398f53e2522f0d8aba04d1874
+- sceneCounts: { meshCount: 628, lineCount: 2, pointCount: 0, groupCount: 206, geometryCount: 436, materialCount: 338 }
+- blueprintCounts: { beaches: 0, buildings: 0, coastlines: 0, pois: 0, roads: 0, sea: 0, transit: 0, zones: 0 }
+- overlayDrift: { ok: true, epsPx: 0.05, maxDriftPx: 0 }
+- NOTE: counts do NOT match Phase 6c baseline; drift reproduced on clean tree.
+
 Status: Hash drift on clean tree → STOP (per v7_rev3).
 
 ## Git Evidence (verbatim)
