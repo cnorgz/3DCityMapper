@@ -26,6 +26,36 @@ Clean-tree probe (rev3 triage, new run):
 
 Status: Hash drift on clean tree → STOP (per v7_rev3).
 
+## Patch-applied probe (WIP reproduction)
+- LEN=3968 SHA256=1db55488f2ae68c57bb67e8783ec5d01eb2c80c398f53e2522f0d8aba04d1874
+- sceneCounts: { meshCount: 628, lineCount: 2, pointCount: 0, groupCount: 206, geometryCount: 436, materialCount: 338 }
+- blueprintCounts: { beaches: 0, buildings: 0, coastlines: 0, pois: 0, roads: 0, sea: 0, transit: 0, zones: 0 }
+- overlayDrift: { ok: true, epsPx: 0.05, maxDriftPx: 0 }
+- NOTE: parity fields drift (counts differ vs baseline), so STOP (no work commit).
+
+Console errors (patch-applied run):
+- Failed to load resource: the server responded with a status of 404 (File not found)
+
+Blueprint debug (patch-applied run):
+- keys: [\"meta\",\"coastlines\",\"beaches\",\"sea\",\"transit\",\"roads\",\"zones\",\"buildings\",\"pois\"]
+- lengths: { roads: 0, zones: 0, coastlines: 0, buildings: 0, pois: 0, beaches: 0 }
+- hasBlueprint: true
+
+## Work tree snapshot (patch applied, no commit)
+### git status -sb
+```
+## refactor/phase6d-road-layer-triage2
+ M city-sim.html
+?? src/geometry/
+?? src/render/RoadLayer.js
+```
+
+### git diff --stat
+```
+ city-sim.html | 79 ++++++++---------------------------------------------------
+ 1 file changed, 10 insertions(+), 69 deletions(-)
+```
+
 ## Git Evidence (verbatim)
 ### git status -sb
 ```
