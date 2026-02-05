@@ -90,7 +90,7 @@ Probe check (post-extraction):
 
 - branch: refactor/phase6c-zone-layer
 - base_commit: f4f5e91
-- phase_end_commit: 2d076e3
+- phase_end_commit: 2b051a4
 
 Probe check (post-extraction):
 - capture_method: codex-mcp

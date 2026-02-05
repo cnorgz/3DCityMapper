@@ -3,7 +3,8 @@
 ## Metadata
 - base_commit: f4f5e91
 - phase_end_commit: 2b051a4
-- packet_commit: PENDING (best-effort; see git log)
+- packet_commit: 42403a6 (best-effort; see git log)
+- NOTE: packet_commit may not match due to self-reference; see git log for authoritative SHA.
 
 ## Phase checklist
 - ✅ Pre-flight micro-fix applied (phase6b metadata note + packet note)
