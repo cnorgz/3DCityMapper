@@ -483,28 +483,50 @@ Codex does **not** “review the plan”; the phase prompt must embed the checkl
 - If anything looks off, stop and reset the branch rather than “patching forward”.
 
 ### 8.3 Baseline anchor capture (required)
-The canonical baseline is a single `runRefactorProbe()` JSON fingerprint stored in `REFACTOR_LOG.md`, tied to a commit SHA.
 
-Serve the app (required):
-1) `python3 -m http.server 8000`
-2) open `http://localhost:8000/city-sim.html?refactorProbe=1`
+**Goal:** keep a single canonical runtime fingerprint so we can detect real drift early.
 
-Two modes (Codex must attempt Mode A once, then fallback):
-- **Mode A (Codex MCP DevTools, opportunistic):**
-  - attempt once only (no retry loops)
-  - capture as string:
-    - `JSON.stringify(runRefactorProbe())` or
-    - `console.log("REFACTOR_PROBE_JSON=" + JSON.stringify(runRefactorProbe()))`
-  - if capture fails/truncates: record failure reason and fallback
-- **Mode B (Xav manual):**
-  - Xav runs `runRefactorProbe()` in browser console and provides JSON to Codex
-  - Codex pastes JSON into `REFACTOR_LOG.md` and commits
+**Serve the app over HTTP (required):**
+- in repo root: `python3 -m http.server 8000`
+- open: `http://localhost:8000/city-sim.html?refactorProbe=1`
 
-Baseline record fields (in `REFACTOR_LOG.md`):
-- `baseline_commit: <sha>`
-- `captured_at_phase: <phase>`
-- `capture_method: codex-mcp | xav-manual`
-- JSON block (verbatim)
+**Run the probe in a clean session (required):**
+- hard reload the tab
+- do **not** click the UI
+- wait for the scene to settle (no ongoing rebuilds)
+
+**Mode A (Codex MCP DevTools) — attempt once (opportunistic):**
+- evaluate **stringified JSON**, then compute SHA-256 **in-browser** to avoid truncation / remote-object weirdness:
+
+```js
+(async () => {
+  const s = JSON.stringify(runRefactorProbe());
+  console.log("REFACTOR_PROBE_LEN=" + s.length);
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
+  const sha = [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, "0")).join("");
+  console.log("REFACTOR_PROBE_SHA256=" + sha);
+})();
+```
+
+- record: `REFACTOR_PROBE_LEN`, `REFACTOR_PROBE_SHA256`, plus the probe’s key fields (sceneCounts / blueprintCounts / overlayDrift / rendererInfo summary).
+- if Mode A fails (timeout / tool error / truncation): **immediate fallback to Mode B** (no retries).
+
+**Mode B (Xav manual) — fallback:**
+- Xav runs the probe in the browser console and gives Codex:
+  - the SHA-256 (from the snippet above), the LEN, and the summarized fields (counts + rendererInfo summary)
+- Codex updates `REFACTOR_LOG.md` accordingly.
+
+**Hash-mismatch triage (required before stopping work):**
+If `REFACTOR_PROBE_SHA256` differs from the canonical baseline:
+1) reload the page (hard reload), repeat the probe **once** (same no-click rule)
+2) if the second run still differs, **STOP** and produce a WIP packet:
+   - include both hashes + lengths
+   - include the summarized fields for both runs
+   - do **not** proceed with refactor commits until SeniorDev1 reviews.
+
+**Canonical baseline location:**
+- `REFACTOR_LOG.md` holds the canonical baseline record and later phase records.
+
 
 ### 8.4 Carry-forward policy (drift is expected)
 Every review packet ends with Carry-Forward issues:
@@ -517,6 +539,7 @@ Each P0/P1 must include:
 - 1-line acceptance criterion (“done when …”)
 
 ### 8.5 Review packet workflow (required at end of every phase / sub-phase)
+
 Codex must generate and commit:
 - `docs/ai/review_packet_phaseX.md`
 - `docs/ai/review_packet_phaseX_Y.md` for micro-fixes
@@ -524,9 +547,13 @@ Codex must generate and commit:
 Packet must declare:
 - `base_commit` (start of phase)
 - `phase_end_commit` (last work commit; review packet commit is not included in phase delta)
-- `packet_commit` (commit that adds the packet content)
+- `packet_commit` (**may be** `PENDING (self-reference; see git log)`)
 
-**Packet immutability rule:** after `packet_commit`, do not “fix the packet” with follow-up docs(ai) commits. If metadata/content is wrong, **amend the packet commit once** (so `packet_commit` remains the commit that contains the packet). If a follow-up fix commit already exists, treat it as a micro-phase and produce `review_packet_phaseX_Y.md`.
+**Packet self-reference rule (important):**
+A packet cannot reliably embed its own commit hash without creating churn. Therefore:
+- **Do not amend** packet commits to “fix packet_commit”.
+- If you want an exact packet SHA, rely on the packet’s included `git log --oneline --decorate -n 20` output (authoritative), or record the exact SHA in `REFACTOR_LOG.md` under the phase entry.
+- If a packet needs substantive correction, treat it as a micro-phase and create a new `review_packet_phaseX_Y.md`.
 
 Packet generation is **fixed-commands only** (no exploration). Extra snippets are allowed only to document P0/P1 items:
 - `git show -U3 <phase_end_commit> -- <file>`
@@ -561,6 +588,7 @@ Packet commit evidence (to prove “packet-only” change) is captured before co
   - `git diff --stat --cached`
   - `git diff --check --cached`
 Then commit the packet.
+
 
 ### 8.6 Cheap self-checks (best-effort, do not “fix to satisfy”) (best-effort, do not “fix to satisfy”)
 Codex should run and record results per phase:
