@@ -812,6 +812,7 @@
     import { buildLegacyBuildingDefs } from './src/geometry/BuildingGenerator.js';
     import { createLegacyBuildings } from './src/render/BuildingLayer.js';
     import { createZoneMeshes } from './src/render/ZoneLayer.js';
+    import { addProp } from './src/render/PropsLayer.js';
     
     // ============================================
     // CONFIGURATION
@@ -3402,7 +3403,7 @@ function validateBlueprint(data) {
         const [ffX, ffZ] = worldCentroid(zoneByName.colFf.userData.points);
         const ferrisWheel = createFerrisWheel(ffX, ffZ);
         ferrisWheel.name = 'ferrisWheel';
-        LAYERS.props.add(ferrisWheel);
+        addProp(LAYERS.props, ferrisWheel);
         ferrisWheelRef = ferrisWheel;  // Cache reference
       }
       
@@ -3516,7 +3517,7 @@ function validateBlueprint(data) {
       rail2.position.set(bridgeCenterX, 8, bridgeCenterZ + 8);
       bridgeGroup.add(rail1, rail2);
       
-      LAYERS.props.add(bridgeGroup);
+      addProp(LAYERS.props, bridgeGroup);
     }
     
     function createHospitalCrossAt(cx, cz) {
@@ -3538,7 +3539,7 @@ function validateBlueprint(data) {
       const crossGroup = new THREE.Group();
       crossGroup.add(arm1, arm2);
       crossGroup.position.set(cx, 42, cz);
-      LAYERS.props.add(crossGroup);
+      addProp(LAYERS.props, crossGroup);
     }
     
     function createStadiumDetailsAt(cx, cz) {
@@ -3551,7 +3552,7 @@ function validateBlueprint(data) {
       const field = new THREE.Mesh(fieldGeo, fieldMat);
       field.position.set(cx, 2, cz);
       field.receiveShadow = true;
-      LAYERS.props.add(field);
+      addProp(LAYERS.props, field);
       
       // Track (ring around field)
       const trackShape = new THREE.Shape();
@@ -3564,7 +3565,7 @@ function validateBlueprint(data) {
       const trackMat = new THREE.MeshStandardMaterial({ color: 0xc87848 });
       const track = new THREE.Mesh(trackGeo, trackMat);
       track.position.set(cx, 2.1, cz);
-      LAYERS.props.add(track);
+      addProp(LAYERS.props, track);
       
       // Seating sections (colored stands)
       const seatColors = [0x3366cc, 0xcc3333, 0x33cc33, 0xcccc33];
@@ -3590,7 +3591,7 @@ function validateBlueprint(data) {
         const seat = new THREE.Mesh(seatGeo, seatMat);
         seat.position.set(cx, 2, cz);
         seat.castShadow = false;  // Decorative - no shadow
-        LAYERS.props.add(seat);
+        addProp(LAYERS.props, seat);
       }
     }
     
@@ -3620,7 +3621,7 @@ function validateBlueprint(data) {
         windmillGroup.add(windmill);
       });
       
-      LAYERS.props.add(windmillGroup);
+      addProp(LAYERS.props, windmillGroup);
     }
     
     function createWindmill() {
@@ -3674,7 +3675,7 @@ function validateBlueprint(data) {
         const [x, z] = toWorld(pos[0], pos[1]);
         const metro = createMetroEntrance();
         metro.position.set(x, 1, z);
-        LAYERS.props.add(metro);
+        addProp(LAYERS.props, metro);
       });
     }
     
@@ -3760,7 +3761,7 @@ function validateBlueprint(data) {
           const tree = createTree();
           tree.position.set(x, 1, z);
           tree.scale.setScalar(0.4 + rng() * 0.4);
-          LAYERS.props.add(tree);
+          addProp(LAYERS.props, tree);
         }
       });
     }
@@ -3992,7 +3993,7 @@ function validateBlueprint(data) {
         car.userData.minX = toWorld(0.42, 0)[0];
         car.userData.maxX = toWorld(0.95, 0)[0];
         if (spec.dir < 0) car.rotation.y = Math.PI;
-        LAYERS.props.add(car);
+        addProp(LAYERS.props, car);
         cars.push(car);
       });
     }
@@ -4076,7 +4077,7 @@ function validateBlueprint(data) {
         const [x, z] = toWorld(pos[0], pos[1]);
         const lamp = createStreetLamp();
         lamp.position.set(x, 0, z);
-        LAYERS.props.add(lamp);
+        addProp(LAYERS.props, lamp);
       });
     }
     
@@ -4118,7 +4119,7 @@ function validateBlueprint(data) {
       for (let i = 0; i < 3; i++) {
         const pylon = createPylon();
         pylon.position.set(cx, 0, cz - 30 + i * 30);
-        LAYERS.props.add(pylon);
+        addProp(LAYERS.props, pylon);
       }
     }
     
@@ -4154,7 +4155,7 @@ function validateBlueprint(data) {
         const tank = new THREE.Mesh(tankGeo, tankMat);
         tank.position.set(cx - 20 + i * 20, 5, cz);
         tank.castShadow = false;  // Small utility - no shadow
-        LAYERS.props.add(tank);
+        addProp(LAYERS.props, tank);
         
         // Water inside
         const waterGeo = new THREE.CylinderGeometry(11, 11, 2, 32);
@@ -4164,7 +4165,7 @@ function validateBlueprint(data) {
         });
         const water = new THREE.Mesh(waterGeo, waterMat);
         water.position.set(cx - 20 + i * 20, 8, cz);
-        LAYERS.props.add(water);
+        addProp(LAYERS.props, water);
       }
     }
     
@@ -4178,7 +4179,7 @@ function validateBlueprint(data) {
       });
       const pond = new THREE.Mesh(pondGeo, pondMat);
       pond.position.set(x, 1.5, z);
-      LAYERS.props.add(pond);
+      addProp(LAYERS.props, pond);
     }
     
     // Create boats for port area
@@ -4201,19 +4202,19 @@ function validateBlueprint(data) {
       const dock1 = new THREE.Mesh(new THREE.BoxGeometry(100, 2, 8), dockMat);
       dock1.position.set(portX, 0.5, portZ - 35);
       dock1.castShadow = false;  // Decorative - no shadow
-      LAYERS.props.add(dock1);
+      addProp(LAYERS.props, dock1);
       
       // West dock
       const dock2 = new THREE.Mesh(new THREE.BoxGeometry(8, 2, 60), dockMat);
       dock2.position.set(portX - 50, 0.5, portZ);
       dock2.castShadow = false;  // Decorative - no shadow
-      LAYERS.props.add(dock2);
+      addProp(LAYERS.props, dock2);
       
       // East dock
       const dock3 = new THREE.Mesh(new THREE.BoxGeometry(8, 2, 60), dockMat);
       dock3.position.set(portX + 50, 0.5, portZ);
       dock3.castShadow = false;  // Decorative - no shadow
-      LAYERS.props.add(dock3);
+      addProp(LAYERS.props, dock3);
       
       // Boats moored at docks - floating on water
       const boatPositions = [
@@ -4229,7 +4230,7 @@ function validateBlueprint(data) {
         boat.position.set(bx, 0, bz); // At water level
         boat.rotation.y = rot;
         boat.scale.setScalar(1.2);
-        LAYERS.props.add(boat);
+        addProp(LAYERS.props, boat);
       });
     }
     
@@ -4273,7 +4274,7 @@ function validateBlueprint(data) {
       worldPositions.forEach(([x, z]) => {
         const star = createStar();
         star.position.set(x, 60, z);
-        LAYERS.props.add(star);
+        addProp(LAYERS.props, star);
       });
     }
     
