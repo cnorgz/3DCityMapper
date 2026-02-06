@@ -787,7 +787,6 @@
     import { validateBlueprint as validateBlueprintCore } from './src/core/BlueprintValidator.js';
     import { normalizeBlueprint } from './src/core/BlueprintNormalizer.js';
     import { BlueprintModel } from './src/core/BlueprintModel.js';
-    import { pixelToOverlayLocal, overlayLocalToPixel } from './src/core/CoordinateMapper.js';
     import {
       loadFromStore as loadOverlayImageFromStore,
       getDataURL as getOverlayImageDataURL,
@@ -816,6 +815,7 @@
     import { buildLegacyCity } from './src/render/CityRenderer.js';
     import { createEditorRebuildScheduler } from './src/editor/RebuildScheduler.js';
     import { createEditorHistoryManager } from './src/editor/HistoryManager.js';
+    import { createEditorSnapEngine } from './src/editor/SnapEngine.js';
     
     // ============================================
     // CONFIGURATION
@@ -971,6 +971,7 @@ let blueprintZoneMeshes = [];
   let blueprintLabelGroup = null;
   let editorRebuildScheduler = null;
   let editorHistoryManager = null;
+  let editorSnapEngine = null;
 
 const blueprintPreviewSettings = {
   opacity: 1,
@@ -6040,30 +6041,20 @@ function validateBlueprint(data) {
       return { x: hit.x, z: hit.z };
     }
 
+    function ensureEditorSnapEngine() {
+      if (!editorSnapEngine) {
+        editorSnapEngine = createEditorSnapEngine({
+          editorState,
+          getMapCoordMapper: () => mapCoordMapper,
+          GRID_STEP_X,
+          GRID_STEP_Z
+        });
+      }
+      return editorSnapEngine;
+    }
+
     function snapMapPoint(point) {
-      let x = point.x;
-      let z = point.z;
-
-      if (editorState.snapGrid) {
-        x = Math.round(x / GRID_STEP_X) * GRID_STEP_X;
-        z = Math.round(z / GRID_STEP_Z) * GRID_STEP_Z;
-      }
-
-      if (editorState.snapPixels && mapCoordMapper) {
-          const px = overlayLocalToPixel({ x, z }, mapCoordMapper);
-        const step = Math.max(1, editorState.pixelStep);
-        const snappedPx = {
-          px: Math.round(px.px / step) * step,
-          py: Math.round(px.py / step) * step
-        };
-        const snapped = pixelToOverlayLocal(snappedPx.px, snappedPx.py, mapCoordMapper);
-        if (snapped) {
-          x = snapped.x;
-          z = snapped.z;
-        }
-      }
-
-      return { x, z };
+      return ensureEditorSnapEngine().snapMapPoint(point);
     }
 
     function updateDraftLine() {
