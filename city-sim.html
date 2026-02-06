@@ -814,6 +814,7 @@
     import { createZoneMeshes } from './src/render/ZoneLayer.js';
     import { addProp } from './src/render/PropsLayer.js';
     import { buildLegacyCity } from './src/render/CityRenderer.js';
+    import { createEditorRebuildScheduler } from './src/editor/RebuildScheduler.js';
     
     // ============================================
     // CONFIGURATION
@@ -967,7 +968,7 @@ const editorHistory = {
 let blueprintCityEnabled = false;
 let blueprintZoneMeshes = [];
   let blueprintLabelGroup = null;
-  let editorRebuildRaf = null;
+  let editorRebuildScheduler = null;
 
 const blueprintPreviewSettings = {
   opacity: 1,
@@ -5246,6 +5247,14 @@ function validateBlueprint(data) {
           setupDebugControls();
           setupBlueprintControls();
           setupEditorControls();
+          if (!editorRebuildScheduler) {
+            editorRebuildScheduler = createEditorRebuildScheduler({
+              getBlueprintData: () => blueprintData,
+              buildBlueprintFromData,
+              rebuildBlueprintCity,
+              updateSelectionMarkers
+            });
+          }
           bindEditorEvents();
           await loadBlueprintData();
 
@@ -6239,14 +6248,15 @@ function validateBlueprint(data) {
     }
 
     function scheduleEditorRebuild() {
-      if (editorRebuildRaf) return;
-      editorRebuildRaf = requestAnimationFrame(() => {
-        editorRebuildRaf = null;
-        if (!blueprintData) return;
-        buildBlueprintFromData(blueprintData);
-        rebuildBlueprintCity();
-        updateSelectionMarkers();
-      });
+      if (!editorRebuildScheduler) {
+        editorRebuildScheduler = createEditorRebuildScheduler({
+          getBlueprintData: () => blueprintData,
+          buildBlueprintFromData,
+          rebuildBlueprintCity,
+          updateSelectionMarkers
+        });
+      }
+      editorRebuildScheduler.schedule();
     }
 
     function updateSelectionMarkers() {
