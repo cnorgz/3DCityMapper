@@ -813,6 +813,7 @@
     import { createLegacyBuildings } from './src/render/BuildingLayer.js';
     import { createZoneMeshes } from './src/render/ZoneLayer.js';
     import { addProp } from './src/render/PropsLayer.js';
+    import { buildLegacyCity } from './src/render/CityRenderer.js';
     
     // ============================================
     // CONFIGURATION
@@ -5188,21 +5189,22 @@ function validateBlueprint(data) {
         console.warn('Failed to run migrations:', error);
       }
       
-      // Phase 1: 2D Zones
-      buildPhase1();
-      loadingBar.style.width = '40%';
-      
-      // Phase 2: 3D Buildings
-      setTimeout(async () => {
-        buildPhase2();
-        loadingBar.style.width = '70%';
-        
-        // Animated water
-        createAnimatedWater();
-        loadingBar.style.width = '80%';
-        
-        // Map overlay
-        try {
+      buildLegacyCity({
+        buildPhase1,
+        buildPhase2,
+        delayMs: 100,
+        onPhase1Done: () => {
+          loadingBar.style.width = '40%';
+        },
+        onPhase2Done: async () => {
+          loadingBar.style.width = '70%';
+
+          // Animated water
+          createAnimatedWater();
+          loadingBar.style.width = '80%';
+
+          // Map overlay
+          try {
           const uploadedDataUrl = getOverlayImageDataURL();
           const uploadedMeta = getOverlayImageMeta();
           mapOverlayImgW = uploadedMeta?.width || MAP_OVERLAY_IMG_W;
@@ -5248,26 +5250,27 @@ function validateBlueprint(data) {
           await loadBlueprintData();
 
           console.log('Map overlay loaded. coordMapper available for pixel-to-world conversion.');
-        } catch (error) {
-          console.warn('Failed to load map overlay:', error);
-        }
-        
-        loadingBar.style.width = '90%';
-        
-        // Set initial view
-        setTimeOfDay(false);
-        setViewMode('plan');
-        
-        loadingBar.style.width = '100%';
-        
-        // Hide loading screen
-        setTimeout(() => {
-          document.getElementById('loading').style.opacity = '0';
+          } catch (error) {
+            console.warn('Failed to load map overlay:', error);
+          }
+
+          loadingBar.style.width = '90%';
+
+          // Set initial view
+          setTimeOfDay(false);
+          setViewMode('plan');
+
+          loadingBar.style.width = '100%';
+
+          // Hide loading screen
           setTimeout(() => {
-            document.getElementById('loading').style.display = 'none';
-          }, 500);
-        }, 300);
-      }, 100);
+            document.getElementById('loading').style.opacity = '0';
+            setTimeout(() => {
+              document.getElementById('loading').style.display = 'none';
+            }, 500);
+          }, 300);
+        }
+      });
     }
     
     function setupOverlayControls() {
