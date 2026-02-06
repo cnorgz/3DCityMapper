@@ -1,30 +1,28 @@
-# Metadata
-- branch: `refactor/phase7c_1-log-metadata`
-- base_commit: `ad2702b`
-- phase_end_commit: `a3232c8`
-- packet_commit: `PENDING` (self-reference; see git log)
-- focus_paths: `REFACTOR_LOG.md docs/ai/`
+# Review Packet — Phase 7c_1 (Log Metadata Hygiene)
 
-# Determinism
-```sh
+## Metadata
+- branch: `refactor/phase7c_1-log-metadata`
+- audit scope: docs-only metadata fix
+- base_commit: `ad2702b`
+- phase_end_commit: `a6b296c`
+- packet_commit: `PENDING` (self-reference; see git log)
+
+## Determinism
+```bash
 command -v rg >/dev/null && echo "rg=1" || echo "rg=0"
-```
-```text
 rg=1
 ```
 
-# Fixed Evidence Commands
-```sh
+## Fixed Commands (Verbatim)
+```bash
 git status -sb
-```
-```text
 ## refactor/phase7c_1-log-metadata
 ```
 
-```sh
+```bash
 git log --oneline -n 20
-```
-```text
+a6b296c docs(phase7c_1): fix phase7c log metadata
+f0248c1 docs(ai): add review packet for phase 7c_1
 a3232c8 docs(phase7c_1): fix phase7c log metadata
 ad2702b docs(ai): add review packet for phase 7c
 957d3ea docs(phase7c): record readiness-gated probe
@@ -43,32 +41,27 @@ a028b0e docs(phase7b): record readiness-gated probe
 ad10aa8 refactor(phase6g): extract CityRenderer orchestrator
 d072929 docs(ai): track SeniorDev1 handoff doc
 2d24954 docs(ai): add review_packet_phase6f_1 (rev4 compliance addendum)
-484754e docs: archive v7_rev3 plan
-ffbefde docs(ai): add review packet for phase 6f
 ```
 
-```sh
-git show -U5 a3232c8 -- REFACTOR_LOG.md
-```
-```diff
-commit a3232c8c6402f7632ffb3e97bb66fcafd106e026
+```bash
+git show -U5 a6b296c -- REFACTOR_LOG.md
+commit a6b296c9b1881212301ea65c90971f997d4d9d17
 Author: xavstack <your.email@example.com>
-Date:   Fri Feb 6 22:45:51 2026 +0100
+Date:   Fri Feb 6 22:52:58 2026 +0100
 
     docs(phase7c_1): fix phase7c log metadata
 
 diff --git a/REFACTOR_LOG.md b/REFACTOR_LOG.md
-index e7e7bfe..160f099 100644
+index 160f099..e530eba 100644
 --- a/REFACTOR_LOG.md
 +++ b/REFACTOR_LOG.md
-@@ -184,11 +184,11 @@ Probe check (post-extraction):
-
+@@ -185,10 +185,11 @@ Probe check (post-extraction):
  ## Phase 7c – Editor SnapEngine extraction
 
  - branch: refactor/phase7c-editor-snap-engine
  - base_commit: 483707c
--- phase_end_commit: PENDING (set in phase7c review packet)
-+- phase_end_commit: 957d3ea
+ - phase_end_commit: 957d3ea
++- packet_commit: ad2702b
  - capture_method: codex-mcp (readiness gated)
  - url: http://localhost:8000/city-sim.html?refactorProbe=1
  - json_len: 3977
@@ -76,28 +69,19 @@ index e7e7bfe..160f099 100644
  - sceneCounts: { meshCount: 631, lineCount: 6, pointCount: 0, groupCount: 206, geometryCount: 443, materialCount: 345 }
 ```
 
-# Carry-Forward Issues
-- `P0 blockers`
-  - None.
-- `P1 fold-forward`
-  - Locator: `docs/ai/review_packet_phase7c.md` metadata line with `packet_commit: PENDING`.
-  - Acceptance: all future packets include packet hash policy note when self-reference remains pending.
-- `P2 notes`
-  - Locator: `REFACTOR_LOG.md` phase metadata blocks.
-  - Acceptance: keep `phase_end_commit` concrete in-phase to avoid downstream docs-only hygiene fixes.
+## Carry-Forward Issues
+- `P0`: None.
+- `P1`: Locator `docs/ai/review_packet_phase7c.md`; acceptance: packet metadata fields should avoid `PENDING` where the exact work/packet SHAs are already known.
+- `P2`: Locator `REFACTOR_LOG.md`; acceptance: keep phase metadata fields (`base_commit`, `phase_end_commit`, `packet_commit`) consistently present for all phases.
 
-# Packet Commit Evidence (pre-commit)
-```sh
+## Packet Commit Evidence (Pre-Commit)
+```bash
 git diff --stat --cached
-```
-```text
- docs/ai/review_packet_phase7c_1.md | 100 +++++++++++++++++++++++++++++++++++++
- 1 file changed, 100 insertions(+)
+ docs/ai/review_packet_phase7c_1.md | 74 +++++++++++++++-----------------------
+ 1 file changed, 29 insertions(+), 45 deletions(-)
 ```
 
-```sh
+```bash
 git diff --check --cached
-```
-```text
 (no output)
 ```
