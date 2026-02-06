@@ -172,7 +172,7 @@ Probe check (post-extraction):
 
 - branch: refactor/phase7b-editor-history-manager
 - base_commit: 5961cf5
-- phase_end_commit: PENDING (set in phase7b review packet)
+- phase_end_commit: a028b0e
 - capture_method: codex-mcp (readiness gated)
 - url: http://localhost:8000/city-sim.html?refactorProbe=1
 - json_len: 3977
