@@ -815,6 +815,7 @@
     import { addProp } from './src/render/PropsLayer.js';
     import { buildLegacyCity } from './src/render/CityRenderer.js';
     import { createEditorRebuildScheduler } from './src/editor/RebuildScheduler.js';
+    import { createEditorHistoryManager } from './src/editor/HistoryManager.js';
     
     // ============================================
     // CONFIGURATION
@@ -969,6 +970,7 @@ let blueprintCityEnabled = false;
 let blueprintZoneMeshes = [];
   let blueprintLabelGroup = null;
   let editorRebuildScheduler = null;
+  let editorHistoryManager = null;
 
 const blueprintPreviewSettings = {
   opacity: 1,
@@ -6416,75 +6418,49 @@ function validateBlueprint(data) {
       return { entry: list[index], layer, index };
     }
 
-    function cloneBlueprintData(data) {
-      const fallback = normalizeBlueprintData({});
-      if (!data) return fallback;
-      try {
-        return JSON.parse(JSON.stringify(data));
-      } catch (e) {
-        console.warn('Blueprint clone failed, resetting.', e);
-        return fallback;
+    function ensureEditorHistoryManager() {
+      if (!editorHistoryManager) {
+        editorHistoryManager = createEditorHistoryManager({
+          getBlueprintData: () => blueprintData,
+          setBlueprintData: (next) => { blueprintData = next; },
+          blueprintModel,
+          editorState,
+          editorHistory,
+          normalizeBlueprintData,
+          clearJunctionMode,
+          buildBlueprintFromData,
+          rebuildBlueprintCity,
+          updateDraftLine,
+          updateDraftMarkers,
+          updateSelectionMarkers,
+          updateEditorStatus
+        });
       }
+      return editorHistoryManager;
+    }
+
+    function cloneBlueprintData(data) {
+      return ensureEditorHistoryManager().cloneBlueprintData(data);
     }
 
     function snapshotEditorState() {
-      return {
-        blueprint: cloneBlueprintData(blueprintData),
-        selected: editorState.selected ? { ...editorState.selected } : null
-      };
+      return ensureEditorHistoryManager().snapshotEditorState();
     }
 
     function pushEditorHistory(snapshot) {
-      if (!snapshot) return;
-      editorHistory.undo.push(snapshot);
-      if (editorHistory.undo.length > editorHistory.limit) {
-        editorHistory.undo.shift();
-      }
-      editorHistory.redo = [];
+      return ensureEditorHistoryManager().pushEditorHistory(snapshot);
     }
 
     function applyEditorSnapshot(snapshot, label) {
-      blueprintModel.applySnapshot(snapshot?.blueprint || {});
-      blueprintData = blueprintModel.getData();
-      editorState.draft = [];
-      editorState.previewPoint = null;
-      clearJunctionMode();
-      editorState.hover = null;
-      editorState.hoverDraftIndex = null;
-      if (snapshot?.selected &&
-        blueprintData?.[snapshot.selected.layer]?.[snapshot.selected.index]) {
-        editorState.selected = { ...snapshot.selected };
-      } else {
-        editorState.selected = null;
-      }
-      buildBlueprintFromData(blueprintData);
-      rebuildBlueprintCity();
-      updateDraftLine();
-      updateDraftMarkers();
-      updateSelectionMarkers();
-      updateEditorStatus(label || 'History applied.');
+      return ensureEditorHistoryManager().applyEditorSnapshot(snapshot, label);
     }
 
     function undoEditor() {
-      if (editorHistory.undo.length === 0) {
-        updateEditorStatus('Undo: nothing to undo.');
-        return;
-      }
-      const current = snapshotEditorState();
-      const snapshot = editorHistory.undo.pop();
-      editorHistory.redo.push(current);
-      applyEditorSnapshot(snapshot, 'Undo.');
+      return ensureEditorHistoryManager().undoEditor();
     }
 
     function redoEditor() {
-      if (editorHistory.redo.length === 0) {
-        updateEditorStatus('Redo: nothing to redo.');
-        return;
-      }
-      const current = snapshotEditorState();
-      const snapshot = editorHistory.redo.pop();
-      editorHistory.undo.push(current);
-      applyEditorSnapshot(snapshot, 'Redo.');
+      return ensureEditorHistoryManager().redoEditor();
     }
 
     function findNearestDraftVertex(point, threshold) {
