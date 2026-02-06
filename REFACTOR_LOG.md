@@ -187,6 +187,7 @@ Probe check (post-extraction):
 - branch: refactor/phase7c-editor-snap-engine
 - base_commit: 483707c
 - phase_end_commit: 957d3ea
+- packet_commit: ad2702b
 - capture_method: codex-mcp (readiness gated)
 - url: http://localhost:8000/city-sim.html?refactorProbe=1
 - json_len: 3977
