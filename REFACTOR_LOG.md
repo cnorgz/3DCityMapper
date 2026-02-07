@@ -201,7 +201,7 @@ Probe check (post-extraction):
 
 - branch: refactor/phase7d-editor-controller
 - base_commit: 446dea1
-- phase_end_commit: b4d4665
+- phase_end_commit: a11428d
 - packet_commit: PENDING
 - capture_method: codex-mcp (readiness gated)
 - url: http://localhost:8000/city-sim.html?refactorProbe=1
