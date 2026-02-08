@@ -261,8 +261,8 @@ Probe check (post-extraction):
 
 - branch: refactor/phase9b-ui-eventbus-strict
 - base_commit: 3982699
-- phase_end_commit: PENDING
-- packet_commit: PENDING
+- phase_end_commit: ee3b220
+- packet_commit: 245035e
 - capture_method: codex-mcp (readiness gated)
 - url: http://localhost:8000/city-sim.html?refactorProbe=1
 - json_len: 3977
