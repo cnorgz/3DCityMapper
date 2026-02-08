@@ -231,8 +231,8 @@ Probe check (post-extraction):
 
 - branch: refactor/phase8-traffic-system
 - base_commit: 84bc767
-- phase_end_commit: PENDING
-- packet_commit: PENDING
+- phase_end_commit: aa5b414
+- packet_commit: 4810ada
 - capture_method: codex-mcp (readiness gated)
 - url: http://localhost:8000/city-sim.html?refactorProbe=1
 - json_len: 3977
