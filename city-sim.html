@@ -823,6 +823,7 @@
     import { createEditorGestures } from './src/editor/Gestures.js';
     import { createPanelManager } from './src/ui/PanelManager.js';
     import { createEventBus } from './src/ui/EventBus.js';
+    import { isDevMode } from './src/ui/DevMode.js';
     import { createTrafficPanel } from './src/ui/panels/TrafficPanel.js';
     import { createOverlayPanel } from './src/ui/panels/OverlayPanel.js';
     import { createBlueprintPreviewPanel } from './src/ui/panels/BlueprintPreviewPanel.js';
@@ -1126,15 +1127,6 @@ function validateBlueprint(data) {
     
     const urlSearchParams = new URLSearchParams(location.search);
     const probeEnabled = urlSearchParams.has('refactorProbe');
-
-    function isUiStrictMode() {
-      if (urlSearchParams.has('dev') || urlSearchParams.has('uiStrict')) return true;
-      try {
-        return localStorage.getItem('3dcm_ui_strict') === '1';
-      } catch (e) {
-        return false;
-      }
-    }
 
     function exposeDebugState() {
       if (window.__CITYSIM__) return;
@@ -6219,7 +6211,7 @@ function validateBlueprint(data) {
       if (!panelManager) {
         if (!uiEventBus) {
           uiEventBus = createEventBus({
-            strict: isUiStrictMode(),
+            strict: isDevMode(),
             allowed: ['traffic/setMaxCars', 'traffic/setSpeedScale', 'blueprintPreview/setOpacity', 'blueprintPreview/setShowLabels']
           });
           uiEventBus.on('traffic/setMaxCars', (value) => {
