@@ -275,8 +275,8 @@ Probe check (post-extraction):
 
 - branch: refactor/phase9c-ui-blueprint-preview-panel
 - base_commit: e415781
-- phase_end_commit: PENDING
-- packet_commit: PENDING
+- phase_end_commit: bdd2d4f
+- packet_commit: 1f1578d
 - capture_method: codex-mcp (readiness gated)
 - url: http://localhost:8000/city-sim.html?refactorProbe=1
 - json_len: 3977
