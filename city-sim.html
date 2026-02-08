@@ -5355,9 +5355,6 @@ function validateBlueprint(data) {
       const overlayUploadBtn = document.getElementById('overlayUpload');
       const jsonField = document.getElementById('blueprintJson');
       const useCityToggle = document.getElementById('blueprintUseCity');
-      const opacitySlider = document.getElementById('blueprintOpacity');
-      const opacityInput = document.getElementById('blueprintOpacityValue');
-      const labelsToggle = document.getElementById('blueprintLabels');
 
       if (!loadBtn || !saveBtn || !copyBtn || !validateBtn || !jsonField) return;
 
@@ -5373,12 +5370,6 @@ function validateBlueprint(data) {
       } catch (e) {
         // ignore persistence load errors
       }
-
-      const applyPreviewSettings = () => {
-        if (opacitySlider) opacitySlider.value = blueprintPreviewSettings.opacity;
-        if (opacityInput) opacityInput.value = blueprintPreviewSettings.opacity;
-        if (labelsToggle) labelsToggle.checked = blueprintPreviewSettings.showLabels;
-      };
 
       const updateJsonField = () => {
         if (!blueprintData) {
@@ -5517,8 +5508,6 @@ function validateBlueprint(data) {
           setBlueprintCityEnabled(!!e.target.checked);
         });
       }
-
-      applyPreviewSettings();
     }
 
     function editorActive() {
