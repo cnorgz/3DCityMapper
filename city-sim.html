@@ -825,6 +825,7 @@
     import { createEventBus } from './src/ui/EventBus.js';
     import { createTrafficPanel } from './src/ui/panels/TrafficPanel.js';
     import { createOverlayPanel } from './src/ui/panels/OverlayPanel.js';
+    import { createBlueprintPreviewPanel } from './src/ui/panels/BlueprintPreviewPanel.js';
     
     // ============================================
     // CONFIGURATION
@@ -989,12 +990,39 @@ let blueprintZoneMeshes = [];
   let uiEventBus = null;
   let trafficPanel = null;
   let overlayPanel = null;
+  let blueprintPreviewPanel = null;
   let trafficSystem = null;
 
 const blueprintPreviewSettings = {
   opacity: 1,
   showLabels: false
 };
+
+function refreshBlueprintPreview() {
+  if (!blueprintData) return;
+  buildBlueprintFromData(blueprintData);
+}
+
+function setBlueprintPreviewOpacity(value) {
+  const clamped = clampNumber(Number.parseFloat(value), 0.1, 1);
+  blueprintPreviewSettings.opacity = clamped;
+  try {
+    setItem(PERSIST_KEYS.blueprintOpacity, clamped);
+  } catch (e) {
+    // ignore persistence errors
+  }
+  refreshBlueprintPreview();
+}
+
+function setBlueprintPreviewLabels(value) {
+  blueprintPreviewSettings.showLabels = !!value;
+  try {
+    setItem(PERSIST_KEYS.blueprintShowLabels, blueprintPreviewSettings.showLabels);
+  } catch (e) {
+    // ignore persistence errors
+  }
+  refreshBlueprintPreview();
+}
 
 const panState = {
   active: false,
@@ -5352,29 +5380,6 @@ function validateBlueprint(data) {
         if (labelsToggle) labelsToggle.checked = blueprintPreviewSettings.showLabels;
       };
 
-      const updateBlueprintPreview = () => {
-        if (!blueprintData) return;
-        buildBlueprintFromData(blueprintData);
-      };
-
-      const bindOpacityInputs = () => {
-        if (!opacitySlider || !opacityInput) return;
-        const sync = (value) => {
-          const clamped = clampNumber(Number.parseFloat(value), 0.1, 1);
-          blueprintPreviewSettings.opacity = clamped;
-          opacitySlider.value = clamped;
-          opacityInput.value = clamped;
-          try {
-            setItem(PERSIST_KEYS.blueprintOpacity, clamped);
-          } catch (e) {
-            // ignore persistence errors
-          }
-          updateBlueprintPreview();
-        };
-        opacitySlider.addEventListener('input', (e) => sync(e.target.value));
-        opacityInput.addEventListener('input', (e) => sync(e.target.value));
-      };
-
       const updateJsonField = () => {
         if (!blueprintData) {
           setBlueprintStatus('Blueprint status: no data loaded.', false);
@@ -5513,19 +5518,6 @@ function validateBlueprint(data) {
         });
       }
 
-      if (labelsToggle) {
-        labelsToggle.addEventListener('change', (e) => {
-          blueprintPreviewSettings.showLabels = !!e.target.checked;
-          try {
-            setItem(PERSIST_KEYS.blueprintShowLabels, blueprintPreviewSettings.showLabels);
-          } catch (e) {
-            // ignore persistence errors
-          }
-          updateBlueprintPreview();
-        });
-      }
-
-      bindOpacityInputs();
       applyPreviewSettings();
     }
 
@@ -6239,7 +6231,7 @@ function validateBlueprint(data) {
         if (!uiEventBus) {
           uiEventBus = createEventBus({
             strict: isUiStrictMode(),
-            allowed: ['traffic/setMaxCars', 'traffic/setSpeedScale']
+            allowed: ['traffic/setMaxCars', 'traffic/setSpeedScale', 'blueprintPreview/setOpacity', 'blueprintPreview/setShowLabels']
           });
           uiEventBus.on('traffic/setMaxCars', (value) => {
             trafficRuntime.maxCars = Math.max(0, Math.min(40, Number.parseInt(value, 10) || 0));
@@ -6257,6 +6249,12 @@ function validateBlueprint(data) {
             } catch (e) {
               // ignore persistence errors
             }
+          });
+          uiEventBus.on('blueprintPreview/setOpacity', (value) => {
+            setBlueprintPreviewOpacity(value);
+          });
+          uiEventBus.on('blueprintPreview/setShowLabels', (value) => {
+            setBlueprintPreviewLabels(value);
           });
         }
         trafficPanel = createTrafficPanel({
@@ -6278,7 +6276,19 @@ function validateBlueprint(data) {
             }
           }
         });
-        panelManager = createPanelManager({ panels: [trafficPanel, overlayPanel] });
+        blueprintPreviewPanel = createBlueprintPreviewPanel({
+          actions: {
+            setOpacity: (value) => uiEventBus.emit('blueprintPreview/setOpacity', value),
+            setShowLabels: (value) => uiEventBus.emit('blueprintPreview/setShowLabels', value)
+          },
+          state: {
+            blueprintPreview: {
+              opacity: blueprintPreviewSettings.opacity,
+              showLabels: blueprintPreviewSettings.showLabels
+            }
+          }
+        });
+        panelManager = createPanelManager({ panels: [trafficPanel, overlayPanel, blueprintPreviewPanel] });
       }
       return panelManager;
     }
@@ -6296,6 +6306,10 @@ function validateBlueprint(data) {
         },
         overlay: {
           opacity: overlaySettings?.opacity ?? OVERLAY_DEFAULTS.opacity
+        },
+        blueprintPreview: {
+          opacity: blueprintPreviewSettings.opacity,
+          showLabels: blueprintPreviewSettings.showLabels
         }
       });
     }
