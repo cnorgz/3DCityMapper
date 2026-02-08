@@ -821,6 +821,8 @@
     import { createEditorHitTest } from './src/editor/HitTest.js';
     import { createEditorInputRouter } from './src/editor/InputRouter.js';
     import { createEditorGestures } from './src/editor/Gestures.js';
+    import { createPanelManager } from './src/ui/PanelManager.js';
+    import { createTrafficPanel } from './src/ui/panels/TrafficPanel.js';
     
     // ============================================
     // CONFIGURATION
@@ -981,6 +983,8 @@ let blueprintZoneMeshes = [];
   let editorHitTest = null;
   let editorInputRouter = null;
   let editorGestures = null;
+  let panelManager = null;
+  let trafficPanel = null;
   let trafficSystem = null;
 
 const blueprintPreviewSettings = {
@@ -5796,14 +5800,7 @@ function validateBlueprint(data) {
       if (zoomValue) zoomValue.value = editorState.mapZoom;
       if (scaleSlider) scaleSlider.value = editorState.handleScale;
       if (scaleValue) scaleValue.value = editorState.handleScale;
-      const trafficCarSlider = document.getElementById('trafficCarCount');
-      const trafficCarValue = document.getElementById('trafficCarCountValue');
-      const trafficSpeedSlider = document.getElementById('trafficSpeed');
-      const trafficSpeedValue = document.getElementById('trafficSpeedValue');
-      if (trafficCarSlider) trafficCarSlider.value = trafficRuntime.maxCars;
-      if (trafficCarValue) trafficCarValue.value = trafficRuntime.maxCars;
-      if (trafficSpeedSlider) trafficSpeedSlider.value = trafficRuntime.speedScale;
-      if (trafficSpeedValue) trafficSpeedValue.value = trafficRuntime.speedScale;
+      syncTrafficPanel();
       updateEditorHeightControls();
     }
 
@@ -6223,6 +6220,54 @@ function validateBlueprint(data) {
       return editorHistoryManager;
     }
 
+    function ensurePanelManager() {
+      if (!panelManager) {
+        trafficPanel = createTrafficPanel({
+          actions: {
+            setTrafficMaxCars: (value) => {
+              trafficRuntime.maxCars = Math.max(0, Math.min(40, Number.parseInt(value, 10) || 0));
+              try {
+                setItem(PERSIST_KEYS.trafficMaxCars, trafficRuntime.maxCars);
+              } catch (e) {
+                // ignore persistence errors
+              }
+              rebuildBlueprintTraffic();
+            },
+            setTrafficSpeedScale: (value) => {
+              trafficRuntime.speedScale = Math.max(0.2, Math.min(3, Number.parseFloat(value) || 1));
+              try {
+                setItem(PERSIST_KEYS.trafficSpeedScale, trafficRuntime.speedScale);
+              } catch (e) {
+                // ignore persistence errors
+              }
+            }
+          },
+          state: {
+            traffic: {
+              maxCars: trafficRuntime.maxCars,
+              speedScale: trafficRuntime.speedScale
+            }
+          }
+        });
+        panelManager = createPanelManager({ panels: [trafficPanel] });
+      }
+      return panelManager;
+    }
+
+    function initTrafficPanel() {
+      ensurePanelManager().initAll();
+      syncTrafficPanel();
+    }
+
+    function syncTrafficPanel() {
+      ensurePanelManager().syncAll({
+        traffic: {
+          maxCars: trafficRuntime.maxCars,
+          speedScale: trafficRuntime.speedScale
+        }
+      });
+    }
+
     function ensureEditorController() {
       if (!editorController) {
         editorController = createEditorController({
@@ -6255,6 +6300,8 @@ function validateBlueprint(data) {
           setBlueprintStatus,
           applyEditorZoom,
           applyHandleScale,
+          initTrafficPanel,
+          syncTrafficPanel,
           deleteSelection,
           setCityLayerVisibility,
           undoEditor,

@@ -19,6 +19,8 @@ export function createEditorController(deps) {
     getEditorGroup,
     getViewMode,
     updateEditorUIState,
+    initTrafficPanel,
+    syncTrafficPanel,
     updateDraftLine,
     updateDraftMarkers,
     updateSelectionMarkers,
@@ -61,10 +63,6 @@ export function createEditorController(deps) {
     const junctionToggle = document.getElementById('editorJunctionMode');
     const junctionSplitToggle = document.getElementById('editorJunctionAutoSplit');
     const debugOffsetsToggle = document.getElementById('editorDebugRoadOffsets');
-    const trafficCarSlider = document.getElementById('trafficCarCount');
-    const trafficCarValue = document.getElementById('trafficCarCountValue');
-    const trafficSpeedSlider = document.getElementById('trafficSpeed');
-    const trafficSpeedValue = document.getElementById('trafficSpeedValue');
     const heightRange = document.getElementById('editorHeightRange');
     const heightValue = document.getElementById('editorHeightValue');
     const heightApply = document.getElementById('editorHeightApply');
@@ -191,35 +189,8 @@ export function createEditorController(deps) {
       });
     }
 
-    const bindTrafficNumber = (slider, input, onChange) => {
-      if (!slider || !input) return;
-      const apply = (value) => {
-        slider.value = value;
-        input.value = value;
-        onChange(value);
-      };
-      slider.addEventListener('input', (e) => apply(e.target.value));
-      input.addEventListener('input', (e) => apply(e.target.value));
-    };
-
-    bindTrafficNumber(trafficCarSlider, trafficCarValue, (value) => {
-      trafficRuntime.maxCars = Math.max(0, Math.min(40, Number.parseInt(value, 10) || 0));
-      try {
-        setItem(PERSIST_KEYS.trafficMaxCars, trafficRuntime.maxCars);
-      } catch (e) {
-        // ignore persistence errors
-      }
-      rebuildBlueprintTraffic();
-    });
-
-    bindTrafficNumber(trafficSpeedSlider, trafficSpeedValue, (value) => {
-      trafficRuntime.speedScale = Math.max(0.2, Math.min(3, Number.parseFloat(value) || 1));
-      try {
-        setItem(PERSIST_KEYS.trafficSpeedScale, trafficRuntime.speedScale);
-      } catch (e) {
-        // ignore persistence errors
-      }
-    });
+    if (typeof initTrafficPanel === 'function') initTrafficPanel();
+    if (typeof syncTrafficPanel === 'function') syncTrafficPanel();
 
     if (heightRange && heightValue) {
       heightRange.addEventListener('input', (e) => {
