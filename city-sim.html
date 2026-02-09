@@ -794,6 +794,8 @@
       getImageMeta as getOverlayImageMeta,
       setFromFile as setOverlayImageFromFile
     } from './src/scanner/ImageSource.js';
+    import { LEGEND_RULES as SCANNER_LEGEND_RULES } from './src/scanner/legendRules.js';
+    import { createScannerController } from './src/scanner/ScannerController.js';
     import { ensureExampleCity } from './src/demo/ExampleCityEntry.js';
     import {
       createBlueprintPreviewGroups,
@@ -1001,6 +1003,8 @@ let blueprintZoneMeshes = [];
   let zoneInfoPanel = null;
   let devHudPanel = null;
   let cityModeController = null;
+  let scannerController = null;
+  let pendingScan = false;
   let trafficSystem = null;
   const devHudState = {
     lastProbe: null
@@ -1764,6 +1768,32 @@ function validateBlueprint(data) {
         });
       }
       return cityModeController;
+    }
+
+    function ensureScannerController() {
+      if (!scannerController) {
+        scannerController = createScannerController({
+          getOverlayImage: () => ({
+            imageId: getOverlayImageId(),
+            dataUrl: getOverlayImageDataURL(),
+            meta: getOverlayImageMeta()
+          }),
+          getLegendRules: () => SCANNER_LEGEND_RULES,
+          createBlankBlueprint: () => {
+            blueprintModel.createBlank();
+            return blueprintModel.getData();
+          },
+          applyBlueprintData: async (draft) => {
+            blueprintData = draft;
+            buildBlueprintFromData(blueprintData);
+            setBlueprintCityEnabled(true);
+            cityModeState.mode = 'blueprint';
+            setBlueprintStatus('Blueprint status: scanner placeholder draft loaded.');
+            syncTrafficPanel();
+          }
+        });
+      }
+      return scannerController;
     }
     
     // Rebuild a single zone (for editing)
@@ -5503,10 +5533,16 @@ function validateBlueprint(data) {
 
         fileInput.addEventListener('change', async (event) => {
           const file = event.target.files?.[0];
-          if (!file) return;
+          if (!file) {
+            pendingScan = false;
+            return;
+          }
           try {
             const result = await setOverlayImageFromFile(file);
-            if (!result) return;
+            if (!result) {
+              pendingScan = false;
+              return;
+            }
 
             mapOverlayImgW = result.meta?.width || MAP_OVERLAY_IMG_W;
             mapOverlayImgH = result.meta?.height || MAP_OVERLAY_IMG_H;
@@ -5538,8 +5574,17 @@ function validateBlueprint(data) {
             overlayLayer = overlayResult;
             updateOverlayVisibility();
             verifyOverlayMapping();
+
+            if (pendingScan) {
+              pendingScan = false;
+              const scanResult = await ensureScannerController().scanFromOverlay();
+              if (!scanResult?.ok) {
+                setBlueprintStatus('Blueprint status: scan placeholder failed.', false);
+              }
+            }
           } catch (err) {
             console.warn('Failed to load uploaded overlay:', err);
+            pendingScan = false;
           } finally {
             fileInput.value = '';
           }
@@ -6327,6 +6372,7 @@ function validateBlueprint(data) {
         cityModePanel = createCityModePanel({
           actions: {
             openScan: () => {
+              pendingScan = true;
               const upload = document.getElementById('overlayUpload');
               upload?.click();
             },
