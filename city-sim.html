@@ -827,6 +827,7 @@
     import { createTrafficPanel } from './src/ui/panels/TrafficPanel.js';
     import { createOverlayPanel } from './src/ui/panels/OverlayPanel.js';
     import { createBlueprintPreviewPanel } from './src/ui/panels/BlueprintPreviewPanel.js';
+    import { createZoneInfoPanel } from './src/ui/panels/ZoneInfoPanel.js';
     
     // ============================================
     // CONFIGURATION
@@ -992,6 +993,7 @@ let blueprintZoneMeshes = [];
   let trafficPanel = null;
   let overlayPanel = null;
   let blueprintPreviewPanel = null;
+  let zoneInfoPanel = null;
   let trafficSystem = null;
 
 const blueprintPreviewSettings = {
@@ -4904,32 +4906,8 @@ function validateBlueprint(data) {
     // ============================================
     // RAYCASTING FOR ZONE INFO
     // ============================================
-    
-    const raycaster = new THREE.Raycaster();
-    const mouse = new THREE.Vector2();
-    
-    function onMouseMove(event) {
-      mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-      mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-      
-      raycaster.setFromCamera(mouse, activeCamera);
-      const zonesToTest = blueprintCityEnabled ? blueprintZoneMeshes : zones;
-      const intersects = raycaster.intersectObjects(zonesToTest);
-      
-      if (intersects.length > 0) {
-        const zone = intersects[0].object;
-        const data = zone.userData;
-        if (data.label) {
-          const info = getLegendInfo(data.label);
-          document.getElementById('zoneInfo').textContent = 
-            `${normalizeTypeCode(data.label)}: ${info.label || data.type}`;
-        }
-      } else {
-        document.getElementById('zoneInfo').textContent = 'Hover over zones for info';
-      }
-    }
-    
-    window.addEventListener('mousemove', onMouseMove);
+    const editorRaycaster = new THREE.Raycaster();
+    const placementMouse = new THREE.Vector2();
     
     // ============================================
     // PLACEMENT DEBUG TOOL
@@ -4941,11 +4919,11 @@ function validateBlueprint(data) {
       // Only log on left click (button 0) and when holding Shift
       if (e.button !== 0 || !e.shiftKey) return;
       
-      mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
-      mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
-      raycaster.setFromCamera(mouse, activeCamera);
+      placementMouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+      placementMouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+      editorRaycaster.setFromCamera(placementMouse, activeCamera);
       
-      if (!raycaster.ray.intersectPlane(groundPlane, tmpP)) return;
+      if (!editorRaycaster.ray.intersectPlane(groundPlane, tmpP)) return;
       
       const x = tmpP.x;
       const z = tmpP.z;
@@ -5622,7 +5600,7 @@ function validateBlueprint(data) {
       if (!editorHitTest) {
         editorHitTest = createEditorHitTest({
           mapOverlayGroupRef: () => mapOverlayGroup,
-          raycaster,
+          raycaster: editorRaycaster,
           THREE,
           Y,
           getActiveCamera: () => activeCamera,
@@ -6269,7 +6247,14 @@ function validateBlueprint(data) {
             }
           }
         });
-        panelManager = createPanelManager({ panels: [trafficPanel, overlayPanel, blueprintPreviewPanel] });
+        zoneInfoPanel = createZoneInfoPanel({
+          three: THREE,
+          getActiveCamera: () => activeCamera,
+          getZonesToTest: () => (blueprintCityEnabled ? blueprintZoneMeshes : zones),
+          getLegendInfo,
+          normalizeTypeCode
+        });
+        panelManager = createPanelManager({ panels: [trafficPanel, overlayPanel, blueprintPreviewPanel, zoneInfoPanel] });
       }
       return panelManager;
     }
