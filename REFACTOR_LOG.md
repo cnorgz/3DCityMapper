@@ -335,8 +335,8 @@ Probe check (post-extraction):
 
 - branch: refactor/phase9g-ui-devhud-panel
 - base_commit: 6883132
-- phase_end_commit: PENDING
-- packet_commit: PENDING
+- phase_end_commit: f7f8d20
+- packet_commit: 3e36260
 - capture_method: codex-mcp (readiness gated)
 - url: http://localhost:8000/city-sim.html?refactorProbe=1
 - json_len: 3978
