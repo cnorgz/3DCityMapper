@@ -794,6 +794,7 @@
       getImageMeta as getOverlayImageMeta,
       setFromFile as setOverlayImageFromFile
     } from './src/scanner/ImageSource.js';
+    import { ensureExampleCity } from './src/demo/ExampleCityEntry.js';
     import {
       createBlueprintPreviewGroups,
       buildBlueprintPreview,
@@ -824,7 +825,7 @@
     import { createPanelManager } from './src/ui/PanelManager.js';
     import { createEventBus } from './src/ui/EventBus.js';
     import { isDevMode } from './src/ui/DevMode.js';
-    import { createCityModeController } from './src/modes/CityModeController.js';
+    import { createCityModeController } from './src/core/CityModeController.js';
     import { createTrafficPanel } from './src/ui/panels/TrafficPanel.js';
     import { createCityModePanel } from './src/ui/panels/CityModePanel.js';
     import { createOverlayPanel } from './src/ui/panels/OverlayPanel.js';
@@ -1006,6 +1007,10 @@ let blueprintZoneMeshes = [];
   };
   const cityModeState = {
     mode: 'example'
+  };
+  const exampleCityEntryState = {
+    initialized: false,
+    pending: null
   };
 
 const blueprintPreviewSettings = {
@@ -1711,6 +1716,20 @@ function validateBlueprint(data) {
       setCityLayerVisibility();
     }
 
+    async function ensureExampleCityBuilt(options = {}) {
+      return ensureExampleCity({
+        state: exampleCityEntryState,
+        runLegacyBuild: () =>
+          buildLegacyCity({
+            buildPhase1,
+            buildPhase2,
+            delayMs: options.delayMs ?? 100,
+            onPhase1Done: options.onPhase1Done,
+            onPhase2Done: options.onPhase2Done
+          })
+      });
+    }
+
     async function applyCityModeBlueprint() {
       if (!blueprintData) {
         await loadBlueprintData();
@@ -1728,6 +1747,7 @@ function validateBlueprint(data) {
     }
 
     async function applyCityModeExample() {
+      await ensureExampleCityBuilt();
       setBlueprintCityEnabled(false);
       setBlueprintStatus('Blueprint status: example city mode.');
     }
@@ -5075,9 +5095,7 @@ function validateBlueprint(data) {
         console.warn('Failed to run migrations:', error);
       }
       
-      buildLegacyCity({
-        buildPhase1,
-        buildPhase2,
+      await ensureExampleCityBuilt({
         delayMs: 100,
         onPhase1Done: () => {
           loadingBar.style.width = '40%';
