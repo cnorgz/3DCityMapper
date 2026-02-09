@@ -320,8 +320,8 @@ Probe check (post-extraction):
 
 - branch: refactor/phase9f-ui-zone-info-panel
 - base_commit: cc9f741
-- phase_end_commit: PENDING
-- packet_commit: PENDING
+- phase_end_commit: 2969992
+- packet_commit: 9b4bace
 - capture_method: codex-mcp (readiness gated)
 - url: http://localhost:8000/city-sim.html?refactorProbe=1
 - json_len: 3977
