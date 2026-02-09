@@ -828,6 +828,7 @@
     import { createOverlayPanel } from './src/ui/panels/OverlayPanel.js';
     import { createBlueprintPreviewPanel } from './src/ui/panels/BlueprintPreviewPanel.js';
     import { createZoneInfoPanel } from './src/ui/panels/ZoneInfoPanel.js';
+    import { createDevHUDPanel } from './src/ui/panels/DevHUDPanel.js';
     
     // ============================================
     // CONFIGURATION
@@ -994,7 +995,11 @@ let blueprintZoneMeshes = [];
   let overlayPanel = null;
   let blueprintPreviewPanel = null;
   let zoneInfoPanel = null;
+  let devHudPanel = null;
   let trafficSystem = null;
+  const devHudState = {
+    lastProbe: null
+  };
 
 const blueprintPreviewSettings = {
   opacity: 1,
@@ -1025,6 +1030,31 @@ function setBlueprintPreviewLabels(value) {
     // ignore persistence errors
   }
   refreshBlueprintPreview();
+}
+
+function summarizeProbeForHUD(probeResult) {
+  if (!probeResult || typeof probeResult !== 'object') {
+    return { error: 'runRefactorProbe unavailable (open ?refactorProbe=1)' };
+  }
+  let len = null;
+  let sha = null;
+  try {
+    const json = JSON.stringify(probeResult);
+    len = json.length;
+  } catch (e) {
+    // ignore JSON errors for HUD summary
+  }
+  if (typeof probeResult.__hash === 'string') {
+    sha = probeResult.__hash;
+  }
+  return {
+    len,
+    sha,
+    sceneCounts: probeResult.sceneCounts || null,
+    blueprintCounts: probeResult.blueprintCounts || null,
+    overlayDrift: probeResult.overlayDrift || null,
+    error: probeResult.error || null
+  };
 }
 
 const panState = {
@@ -6254,7 +6284,32 @@ function validateBlueprint(data) {
           getLegendInfo,
           normalizeTypeCode
         });
-        panelManager = createPanelManager({ panels: [trafficPanel, overlayPanel, blueprintPreviewPanel, zoneInfoPanel] });
+        devHudPanel = createDevHUDPanel({
+          enabled: isDevMode(),
+          actions: {
+            runProbe: async () => {
+              if (typeof window.runRefactorProbe !== 'function') {
+                devHudState.lastProbe = { error: 'runRefactorProbe unavailable (open ?refactorProbe=1)' };
+                panelManager?.syncAll({ devHud: { lastProbe: devHudState.lastProbe } });
+                return devHudState.lastProbe;
+              }
+              try {
+                const raw = window.runRefactorProbe();
+                devHudState.lastProbe = summarizeProbeForHUD(raw);
+              } catch (error) {
+                devHudState.lastProbe = { error: String(error?.message || error) };
+              }
+              panelManager?.syncAll({ devHud: { lastProbe: devHudState.lastProbe } });
+              return devHudState.lastProbe;
+            }
+          },
+          state: {
+            devHud: {
+              lastProbe: devHudState.lastProbe
+            }
+          }
+        });
+        panelManager = createPanelManager({ panels: [trafficPanel, overlayPanel, blueprintPreviewPanel, zoneInfoPanel, devHudPanel] });
       }
       return panelManager;
     }
@@ -6276,6 +6331,9 @@ function validateBlueprint(data) {
         blueprintPreview: {
           opacity: blueprintPreviewSettings.opacity,
           showLabels: blueprintPreviewSettings.showLabels
+        },
+        devHud: {
+          lastProbe: devHudState.lastProbe
         }
       });
     }
