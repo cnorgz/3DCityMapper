@@ -824,7 +824,9 @@
     import { createPanelManager } from './src/ui/PanelManager.js';
     import { createEventBus } from './src/ui/EventBus.js';
     import { isDevMode } from './src/ui/DevMode.js';
+    import { createCityModeController } from './src/modes/CityModeController.js';
     import { createTrafficPanel } from './src/ui/panels/TrafficPanel.js';
+    import { createCityModePanel } from './src/ui/panels/CityModePanel.js';
     import { createOverlayPanel } from './src/ui/panels/OverlayPanel.js';
     import { createBlueprintPreviewPanel } from './src/ui/panels/BlueprintPreviewPanel.js';
     import { createZoneInfoPanel } from './src/ui/panels/ZoneInfoPanel.js';
@@ -992,13 +994,18 @@ let blueprintZoneMeshes = [];
   let panelManager = null;
   let uiEventBus = null;
   let trafficPanel = null;
+  let cityModePanel = null;
   let overlayPanel = null;
   let blueprintPreviewPanel = null;
   let zoneInfoPanel = null;
   let devHudPanel = null;
+  let cityModeController = null;
   let trafficSystem = null;
   const devHudState = {
     lastProbe: null
+  };
+  const cityModeState = {
+    mode: 'example'
   };
 
 const blueprintPreviewSettings = {
@@ -1702,6 +1709,41 @@ function validateBlueprint(data) {
         rebuildBlueprintCity();
       }
       setCityLayerVisibility();
+    }
+
+    async function applyCityModeBlueprint() {
+      if (!blueprintData) {
+        await loadBlueprintData();
+      }
+      setBlueprintCityEnabled(true);
+      setBlueprintStatus('Blueprint status: blueprint mode.');
+    }
+
+    async function applyCityModeBlank() {
+      blueprintModel.createBlank();
+      blueprintData = blueprintModel.getData();
+      buildBlueprintFromData(blueprintData);
+      setBlueprintCityEnabled(true);
+      setBlueprintStatus('Blueprint status: blank city.');
+    }
+
+    async function applyCityModeExample() {
+      setBlueprintCityEnabled(false);
+      setBlueprintStatus('Blueprint status: example city mode.');
+    }
+
+    function ensureCityModeController() {
+      if (!cityModeController) {
+        cityModeController = createCityModeController({
+          defaultMode: 'example',
+          actions: {
+            applyBlueprintMode: applyCityModeBlueprint,
+            applyBlankMode: applyCityModeBlank,
+            applyExampleMode: applyCityModeExample
+          }
+        });
+      }
+      return cityModeController;
     }
     
     // Rebuild a single zone (for editing)
@@ -5100,6 +5142,10 @@ function validateBlueprint(data) {
           }
           bindEditorEvents();
           await loadBlueprintData();
+          const controller = ensureCityModeController();
+          await controller.applyInitialMode();
+          cityModeState.mode = controller.getMode();
+          syncTrafficPanel();
 
           console.log('Map overlay loaded. coordMapper available for pixel-to-world conversion.');
           } catch (error) {
@@ -5506,6 +5552,8 @@ function validateBlueprint(data) {
         useCityToggle.checked = blueprintCityEnabled;
         useCityToggle.addEventListener('change', (e) => {
           setBlueprintCityEnabled(!!e.target.checked);
+          cityModeState.mode = e.target.checked ? 'blueprint' : 'example';
+          syncTrafficPanel();
         });
       }
     }
@@ -6258,6 +6306,25 @@ function validateBlueprint(data) {
             }
           }
         });
+        cityModePanel = createCityModePanel({
+          actions: {
+            openScan: () => {
+              const upload = document.getElementById('overlayUpload');
+              upload?.click();
+            },
+            setMode: async (mode) => {
+              const controller = ensureCityModeController();
+              await controller.setMode(mode);
+              cityModeState.mode = controller.getMode();
+              syncTrafficPanel();
+            }
+          },
+          state: {
+            cityMode: {
+              mode: cityModeState.mode
+            }
+          }
+        });
         overlayPanel = createOverlayPanel({
           state: {
             overlay: {
@@ -6309,7 +6376,7 @@ function validateBlueprint(data) {
             }
           }
         });
-        panelManager = createPanelManager({ panels: [trafficPanel, overlayPanel, blueprintPreviewPanel, zoneInfoPanel, devHudPanel] });
+        panelManager = createPanelManager({ panels: [trafficPanel, cityModePanel, overlayPanel, blueprintPreviewPanel, zoneInfoPanel, devHudPanel] });
       }
       return panelManager;
     }
@@ -6331,6 +6398,9 @@ function validateBlueprint(data) {
         blueprintPreview: {
           opacity: blueprintPreviewSettings.opacity,
           showLabels: blueprintPreviewSettings.showLabels
+        },
+        cityMode: {
+          mode: cityModeState.mode
         },
         devHud: {
           lastProbe: devHudState.lastProbe
