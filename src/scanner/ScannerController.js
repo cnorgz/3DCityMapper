@@ -18,8 +18,34 @@ export function createScannerController({
         const draft = createBlankBlueprint();
         if (!draft) return { ok: false, reason: 'blank-blueprint-failed' };
 
-        await applyBlueprintData(draft, { overlay, legendRules });
-        return { ok: true, mode: 'placeholder-draft' };
+        const applyResult = await applyBlueprintData(draft, { overlay, legendRules });
+        if (applyResult && applyResult.ok === false) {
+          return {
+            ok: false,
+            reason: applyResult.reason || 'apply-blueprint-failed',
+            errors: applyResult.errors || null
+          };
+        }
+
+        const overlayMeta = {};
+        if (overlay.imageId !== undefined && overlay.imageId !== null) {
+          overlayMeta.imageId = overlay.imageId;
+        }
+        const width = overlay?.meta?.width ?? overlay?.width;
+        const height = overlay?.meta?.height ?? overlay?.height;
+        if (Number.isFinite(width)) overlayMeta.width = width;
+        if (Number.isFinite(height)) overlayMeta.height = height;
+
+        const result = {
+          ok: true,
+          mode: 'placeholder-draft',
+          draft,
+          legendRules
+        };
+        if (Object.keys(overlayMeta).length > 0) {
+          result.overlayMeta = overlayMeta;
+        }
+        return result;
       })
       .finally(() => {
         pending = null;

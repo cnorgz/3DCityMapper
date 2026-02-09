@@ -1783,13 +1783,31 @@ function validateBlueprint(data) {
             blueprintModel.createBlank();
             return blueprintModel.getData();
           },
-          applyBlueprintData: async (draft) => {
-            blueprintData = draft;
+          applyBlueprintData: async (draft, ctx) => {
+            const validation = blueprintModel.validate(draft);
+            if (!validation.ok) {
+              const firstError = validation.errors?.[0] || 'unknown validation error';
+              console.warn('Scanner placeholder draft validation failed:', { errors: validation.errors, context: ctx });
+              setBlueprintStatus(`Blueprint status: scan draft invalid (${firstError}).`, false);
+              return { ok: false, reason: 'invalid-blueprint-draft', errors: validation.errors || [] };
+            }
+
+            let normalizedDraft = null;
+            try {
+              normalizedDraft = blueprintModel.loadFromJSON(draft);
+            } catch (error) {
+              console.warn('Scanner placeholder draft normalization failed:', error);
+              setBlueprintStatus('Blueprint status: scan draft normalization failed.', false);
+              return { ok: false, reason: 'normalize-failed' };
+            }
+
+            blueprintData = normalizedDraft;
             buildBlueprintFromData(blueprintData);
             setBlueprintCityEnabled(true);
             cityModeState.mode = 'blueprint';
             setBlueprintStatus('Blueprint status: scanner placeholder draft loaded.');
             syncTrafficPanel();
+            return { ok: true };
           }
         });
       }
@@ -5579,7 +5597,8 @@ function validateBlueprint(data) {
               pendingScan = false;
               const scanResult = await ensureScannerController().scanFromOverlay();
               if (!scanResult?.ok) {
-                setBlueprintStatus('Blueprint status: scan placeholder failed.', false);
+                const reason = scanResult?.reason ? ` (${scanResult.reason})` : '';
+                setBlueprintStatus(`Blueprint status: scan placeholder failed.${reason}`, false);
               }
             }
           } catch (err) {
