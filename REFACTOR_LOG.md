@@ -350,8 +350,8 @@ Probe check (post-extraction):
 
 - branch: refactor/phase10a-city-mode-controller
 - base_commit: b22284c
-- phase_end_commit: PENDING
-- packet_commit: PENDING
+- phase_end_commit: bbbae5e
+- packet_commit: d233ca9
 - capture_method: codex-mcp (readiness gated)
 - url: http://localhost:8000/city-sim.html?refactorProbe=1
 - json_len: 3977
@@ -364,8 +364,8 @@ Probe check (post-extraction):
 
 - branch: refactor/phase10b-example-city-entry
 - base_commit: d233ca9
-- phase_end_commit: PENDING
-- packet_commit: PENDING
+- phase_end_commit: 6540d5b
+- packet_commit: cf6ed56
 - capture_method: codex-mcp (readiness gated)
 - url: http://localhost:8000/city-sim.html?refactorProbe=1
 - json_len: 3977
