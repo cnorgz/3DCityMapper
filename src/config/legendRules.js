@@ -41,3 +41,9 @@ export const LEGEND_TYPE_MAP = {
 };
 
 export const ALLOWED_TYPE_CODES = new Set(Object.keys(LEGEND_TYPE_MAP));
+
+export const LEGEND_RULES = Object.freeze({
+  version: 'phase11a-placeholder',
+  mode: 'manual-legend',
+  classes: []
+});

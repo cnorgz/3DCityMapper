@@ -1,5 +1,1 @@
-export const LEGEND_RULES = Object.freeze({
-  version: 'phase11a-placeholder',
-  mode: 'manual-legend',
-  classes: []
-});
+export { LEGEND_RULES } from '../config/legendRules.js';
