@@ -2,6 +2,8 @@ export function createScannerController({
   getOverlayImage = () => null,
   getLegendRules = () => null,
   createBlankBlueprint = () => null,
+  validateDraft = null,
+  normalizeDraft = null,
   applyBlueprintData = async () => {}
 } = {}) {
   let pending = null;
@@ -18,7 +20,29 @@ export function createScannerController({
         const draft = createBlankBlueprint();
         if (!draft) return { ok: false, reason: 'blank-blueprint-failed' };
 
-        const applyResult = await applyBlueprintData(draft, { overlay, legendRules });
+        const ctx = { overlay, legendRules };
+
+        if (typeof validateDraft === 'function') {
+          const validation = await validateDraft(draft, ctx);
+          if (!validation?.ok) {
+            return {
+              ok: false,
+              reason: 'invalid-blueprint-draft',
+              errors: validation?.errors || []
+            };
+          }
+        }
+
+        let normalizedDraft = draft;
+        if (typeof normalizeDraft === 'function') {
+          try {
+            normalizedDraft = await normalizeDraft(draft, ctx);
+          } catch (_error) {
+            return { ok: false, reason: 'normalize-failed' };
+          }
+        }
+
+        const applyResult = await applyBlueprintData(normalizedDraft, ctx);
         if (applyResult && applyResult.ok === false) {
           return {
             ok: false,
@@ -39,7 +63,7 @@ export function createScannerController({
         const result = {
           ok: true,
           mode: 'placeholder-draft',
-          draft,
+          draft: normalizedDraft,
           legendRules
         };
         if (Object.keys(overlayMeta).length > 0) {

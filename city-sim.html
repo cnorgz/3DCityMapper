@@ -1783,24 +1783,13 @@ function validateBlueprint(data) {
             blueprintModel.createBlank();
             return blueprintModel.getData();
           },
+          validateDraft: (draft, _ctx) => blueprintModel.validate(draft),
+          normalizeDraft: (draft, _ctx) => {
+            blueprintModel.loadFromJSON(draft);
+            return blueprintModel.getData();
+          },
           applyBlueprintData: async (draft, ctx) => {
-            const validation = blueprintModel.validate(draft);
-            if (!validation.ok) {
-              const firstError = validation.errors?.[0] || 'unknown validation error';
-              console.warn('Scanner placeholder draft validation failed:', { errors: validation.errors, context: ctx });
-              setBlueprintStatus(`Blueprint status: scan draft invalid (${firstError}).`, false);
-              return { ok: false, reason: 'invalid-blueprint-draft', errors: validation.errors || [] };
-            }
-
-            try {
-              blueprintModel.loadFromJSON(draft);
-            } catch (error) {
-              console.warn('Scanner placeholder draft normalization failed:', error);
-              setBlueprintStatus('Blueprint status: scan draft normalization failed.', false);
-              return { ok: false, reason: 'normalize-failed' };
-            }
-
-            blueprintData = blueprintModel.getData();
+            blueprintData = draft;
             buildBlueprintFromData(blueprintData);
             setBlueprintCityEnabled(true);
             cityModeState.mode = 'blueprint';
@@ -5596,8 +5585,15 @@ function validateBlueprint(data) {
               pendingScan = false;
               const scanResult = await ensureScannerController().scanFromOverlay();
               if (!scanResult?.ok) {
-                const reason = scanResult?.reason ? ` (${scanResult.reason})` : '';
-                setBlueprintStatus(`Blueprint status: scan placeholder failed.${reason}`, false);
+                if (scanResult.reason === 'invalid-blueprint-draft') {
+                  const firstError = scanResult?.errors?.[0] || 'unknown validation error';
+                  setBlueprintStatus(`Blueprint status: scan draft invalid (${firstError}).`, false);
+                } else if (scanResult.reason === 'normalize-failed') {
+                  setBlueprintStatus('Blueprint status: scan draft normalization failed.', false);
+                } else {
+                  const reason = scanResult?.reason ? ` (${scanResult.reason})` : '';
+                  setBlueprintStatus(`Blueprint status: scan placeholder failed.${reason}`, false);
+                }
               }
             }
           } catch (err) {
