@@ -407,8 +407,8 @@ Probe check (post-extraction):
 
 - branch: refactor/phase11c-scanner-normalize-safety
 - base_commit: 3601fcd
-- phase_end_commit: PENDING
-- packet_commit: PENDING
+- phase_end_commit: f5ba1bd
+- packet_commit: a7b9b64
 - capture_method: codex-mcp (readiness gated)
 - url: http://localhost:8000/city-sim.html?refactorProbe=1
 - json_len: 3977
