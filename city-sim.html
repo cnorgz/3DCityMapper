@@ -795,6 +795,7 @@
       setFromFile as setOverlayImageFromFile
     } from './src/scanner/ImageSource.js';
     import { LEGEND_RULES as SCANNER_LEGEND_RULES } from './src/scanner/legendRules.js';
+    import { buildDraftBlueprint } from './src/scanner/DraftBlueprintBuilder.js';
     import { createScannerController } from './src/scanner/ScannerController.js';
     import { ensureExampleCity } from './src/demo/ExampleCityEntry.js';
     import {
@@ -1783,6 +1784,7 @@ function validateBlueprint(data) {
             blueprintModel.createBlank();
             return blueprintModel.getData();
           },
+          buildDraftBlueprint,
           validateDraft: (draft, _ctx) => blueprintModel.validate(draft),
           normalizeDraft: (draft, _ctx) => {
             blueprintModel.loadFromJSON(draft);

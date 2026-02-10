@@ -1,7 +1,10 @@
+import { buildDraftBlueprint as buildDraftBlueprintDefault } from './DraftBlueprintBuilder.js';
+
 export function createScannerController({
   getOverlayImage = () => null,
   getLegendRules = () => null,
   createBlankBlueprint = () => null,
+  buildDraftBlueprint = buildDraftBlueprintDefault,
   validateDraft = null,
   normalizeDraft = null,
   applyBlueprintData = async () => {}
@@ -17,10 +20,29 @@ export function createScannerController({
         if (!overlay || !overlay.dataUrl) return { ok: false, reason: 'no-overlay-image' };
 
         const legendRules = getLegendRules();
-        const draft = createBlankBlueprint();
+        const overlayMeta = {};
+        if (overlay.imageId !== undefined && overlay.imageId !== null) {
+          overlayMeta.imageId = overlay.imageId;
+        }
+        const width = overlay?.meta?.width ?? overlay?.width;
+        const height = overlay?.meta?.height ?? overlay?.height;
+        if (Number.isFinite(width)) overlayMeta.width = width;
+        if (Number.isFinite(height)) overlayMeta.height = height;
+
+        let draft = null;
+        try {
+          draft = buildDraftBlueprint({
+            overlayImage: overlay,
+            legendRules,
+            overlayMeta,
+            createBlankBlueprint
+          });
+        } catch (_error) {
+          return { ok: false, reason: 'blank-blueprint-failed' };
+        }
         if (!draft) return { ok: false, reason: 'blank-blueprint-failed' };
 
-        const ctx = { overlay, legendRules };
+        const ctx = { overlay, overlayMeta, legendRules };
 
         if (typeof validateDraft === 'function') {
           const validation = await validateDraft(draft, ctx);
@@ -50,15 +72,6 @@ export function createScannerController({
             errors: applyResult.errors || null
           };
         }
-
-        const overlayMeta = {};
-        if (overlay.imageId !== undefined && overlay.imageId !== null) {
-          overlayMeta.imageId = overlay.imageId;
-        }
-        const width = overlay?.meta?.width ?? overlay?.width;
-        const height = overlay?.meta?.height ?? overlay?.height;
-        if (Number.isFinite(width)) overlayMeta.width = width;
-        if (Number.isFinite(height)) overlayMeta.height = height;
 
         const result = {
           ok: true,
