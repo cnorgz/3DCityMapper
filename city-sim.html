@@ -1792,16 +1792,15 @@ function validateBlueprint(data) {
               return { ok: false, reason: 'invalid-blueprint-draft', errors: validation.errors || [] };
             }
 
-            let normalizedDraft = null;
             try {
-              normalizedDraft = blueprintModel.loadFromJSON(draft);
+              blueprintModel.loadFromJSON(draft);
             } catch (error) {
               console.warn('Scanner placeholder draft normalization failed:', error);
               setBlueprintStatus('Blueprint status: scan draft normalization failed.', false);
               return { ok: false, reason: 'normalize-failed' };
             }
 
-            blueprintData = normalizedDraft;
+            blueprintData = blueprintModel.getData();
             buildBlueprintFromData(blueprintData);
             setBlueprintCityEnabled(true);
             cityModeState.mode = 'blueprint';
