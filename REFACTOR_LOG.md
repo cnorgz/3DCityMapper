@@ -483,8 +483,8 @@ Probe check (post-extraction):
 
 - branch: refactor/phase11h-image-source-normalize-2048
 - base_commit: edc47d8
-- phase_end_commit: PENDING
-- packet_commit: PENDING
+- phase_end_commit: 0afa0d9
+- packet_commit: aa6b8a3
 - capture_method: codex-mcp (readiness gated)
 - url: http://localhost:8000/city-sim.html?refactorProbe=1
 - json_len: 3977
