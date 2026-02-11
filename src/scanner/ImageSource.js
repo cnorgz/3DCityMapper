@@ -67,7 +67,12 @@ export function loadFromStore() {
 }
 
 function computeImageId(file) {
-  return `${file.name}:${file.size}:${file.lastModified}`;
+  const identity = {
+    name: String(file?.name || ''),
+    size: Number.isFinite(Number(file?.size)) ? Number(file.size) : 0,
+    lastModified: Number.isFinite(Number(file?.lastModified)) ? Number(file.lastModified) : 0
+  };
+  return JSON.stringify(identity);
 }
 
 function readFileAsDataURL(file) {

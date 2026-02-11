@@ -1,4 +1,4 @@
-import { getItemRaw, setItemRaw, hasItem, setItem } from './StateStore.js';
+import { getItemRaw, hasItem, setItem, getItem } from './StateStore.js';
 
 const LEGACY_KEYS = {
   overlayCalib: 'tadhgCityOverlayCalib',
@@ -17,13 +17,21 @@ export function runMigrations({ imageId = 'demo' } = {}) {
 
 function migrateOverlayCalib(imageId) {
   const legacyRaw = getItemRaw(LEGACY_KEYS.overlayCalib);
-  if (legacyRaw == null) return;
-
   const newKey = NEW_KEYS.overlayCalib(imageId);
-  if (hasItem(newKey)) return;
+  if (legacyRaw != null && !hasItem(newKey)) {
+    // legacy value is already JSON stringified; preserve as parsed object
+    setItem(newKey, legacyRaw);
+  }
 
-  // legacy value is already JSON stringified; preserve as parsed object
-  setItem(newKey, legacyRaw);
+  if (hasItem(newKey)) return;
+  if (imageId === 'demo') return;
+
+  const demoKey = NEW_KEYS.overlayCalib('demo');
+  if (!hasItem(demoKey)) return;
+
+  const demoValue = getItem(demoKey);
+  if (demoValue == null) return;
+  setItem(newKey, demoValue);
 }
 
 function migrateOverlayPanelCollapsed() {
