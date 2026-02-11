@@ -438,8 +438,8 @@ Probe check (post-extraction):
 
 - branch: refactor/phase11e-legendrules-to-config
 - base_commit: cb56281
-- phase_end_commit: PENDING
-- packet_commit: PENDING
+- phase_end_commit: 08dba45
+- packet_commit: b029371
 - capture_method: codex-mcp (readiness gated)
 - url: http://localhost:8000/city-sim.html?refactorProbe=1
 - json_len: 3978
