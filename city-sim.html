@@ -1780,7 +1780,7 @@ function validateBlueprint(data) {
             meta: getOverlayImageMeta()
           }),
           getLegendRules: () => SCANNER_LEGEND_RULES,
-          createBlankBlueprint: () => {
+          createBlankBlueprint: (_options = {}) => {
             blueprintModel.createBlank();
             return blueprintModel.getData();
           },

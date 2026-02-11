@@ -5,9 +5,8 @@
 export function buildDraftBlueprint({ overlayImage, legendRules, overlayMeta, createBlankBlueprint } = {}) {
   void overlayImage;
   void legendRules;
-  void overlayMeta;
   if (typeof createBlankBlueprint !== 'function') {
     throw new Error('createBlankBlueprint-missing');
   }
-  return createBlankBlueprint();
+  return createBlankBlueprint({ overlayMeta });
 }

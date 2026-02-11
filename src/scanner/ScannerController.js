@@ -24,10 +24,16 @@ export function createScannerController({
         if (overlay.imageId !== undefined && overlay.imageId !== null) {
           overlayMeta.imageId = overlay.imageId;
         }
-        const width = overlay?.meta?.width ?? overlay?.width;
-        const height = overlay?.meta?.height ?? overlay?.height;
-        if (Number.isFinite(width)) overlayMeta.width = width;
-        if (Number.isFinite(height)) overlayMeta.height = height;
+        const normalizedWidth = overlay?.meta?.width ?? overlay?.width;
+        const normalizedHeight = overlay?.meta?.height ?? overlay?.height;
+        if (Number.isFinite(normalizedWidth)) {
+          overlayMeta.normalizedWidth = normalizedWidth;
+          overlayMeta.width = normalizedWidth;
+        }
+        if (Number.isFinite(normalizedHeight)) {
+          overlayMeta.normalizedHeight = normalizedHeight;
+          overlayMeta.height = normalizedHeight;
+        }
 
         let draft = null;
         try {
