@@ -515,8 +515,8 @@ Probe check (post-extraction):
 
 - branch: refactor/phase11j-scanner-consume-normalized-meta
 - base_commit: 43ed3f5
-- phase_end_commit: PENDING
-- packet_commit: PENDING
+- phase_end_commit: cb658e6
+- packet_commit: 1772722
 - capture_method: codex-mcp (readiness gated)
 - url: http://localhost:8000/city-sim.html?refactorProbe=1
 - json_len: 3978
