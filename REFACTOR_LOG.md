@@ -499,8 +499,8 @@ Probe check (post-extraction):
 
 - branch: refactor/phase11i-imageid-calib-keying
 - base_commit: aa6b8a3
-- phase_end_commit: PENDING
-- packet_commit: PENDING
+- phase_end_commit: f2bd6da
+- packet_commit: 43ed3f5
 - capture_method: codex-mcp (readiness gated)
 - url: http://localhost:8000/city-sim.html?refactorProbe=1
 - json_len: 3978
