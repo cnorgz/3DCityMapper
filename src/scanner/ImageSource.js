@@ -1,12 +1,11 @@
 import { getItem, setItem, removeItem } from '../persistence/StateStore.js';
+import { OVERLAY_IMPORT_MAX_EDGE_PX } from '../config/constants.js';
 
 const STORAGE_KEYS = {
   imageId: 'overlay.imageId',
   imageData: 'overlay.imageData',
   imageMeta: 'overlay.imageMeta'
 };
-
-const MAX_EDGE_PX = 2048;
 
 let currentImageId = null;
 let currentDataUrl = null;
@@ -17,9 +16,21 @@ function safeParseImageMeta(raw) {
   const width = Number(raw.width);
   const height = Number(raw.height);
   if (!Number.isFinite(width) || !Number.isFinite(height)) return null;
+  const originalWidth = Number.isFinite(Number(raw.originalWidth))
+    ? Number(raw.originalWidth)
+    : width;
+  const originalHeight = Number.isFinite(Number(raw.originalHeight))
+    ? Number(raw.originalHeight)
+    : height;
+  const scaleFactor = Number.isFinite(Number(raw.scaleFactor))
+    ? Number(raw.scaleFactor)
+    : 1;
   return {
     width,
     height,
+    originalWidth,
+    originalHeight,
+    scaleFactor,
     name: raw.name || '',
     size: Number.isFinite(raw.size) ? raw.size : 0,
     lastModified: Number.isFinite(raw.lastModified) ? raw.lastModified : 0
@@ -39,7 +50,7 @@ export function getImageMeta() {
 }
 
 export function getMaxEdgePx() {
-  return MAX_EDGE_PX;
+  return OVERLAY_IMPORT_MAX_EDGE_PX;
 }
 
 export function loadFromStore() {
@@ -104,12 +115,20 @@ export async function setFromFile(file) {
   const imageId = computeImageId(file);
   const rawDataUrl = await readFileAsDataURL(file);
   const img = await loadImage(rawDataUrl);
-  const normalized = normalizeDataUrl(img, MAX_EDGE_PX);
+  const normalized = normalizeDataUrl(img, OVERLAY_IMPORT_MAX_EDGE_PX);
   if (!normalized.dataUrl) return null;
+  const originalWidth = img.naturalWidth || img.width || normalized.width;
+  const originalHeight = img.naturalHeight || img.height || normalized.height;
+  const maxOriginal = Math.max(originalWidth, originalHeight);
+  const maxNormalized = Math.max(normalized.width, normalized.height);
+  const scaleFactor = maxOriginal > 0 ? maxNormalized / maxOriginal : 1;
 
   const meta = {
     width: normalized.width,
     height: normalized.height,
+    originalWidth,
+    originalHeight,
+    scaleFactor,
     name: file.name,
     size: file.size,
     lastModified: file.lastModified

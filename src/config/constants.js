@@ -22,6 +22,7 @@ export const Y = {
 };
 
 export const OVERLAY_STORAGE_KEY = 'tadhgCityOverlayCalib';
+export const OVERLAY_IMPORT_MAX_EDGE_PX = 2048;
 export const OVERLAY_DEFAULTS = {
   offsetX: 0,
   offsetZ: 0,
