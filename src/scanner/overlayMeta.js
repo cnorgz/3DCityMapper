@@ -1,3 +1,8 @@
+/**
+ * Builds scanner/overlay metadata from the active overlay image source.
+ * Keeps compatibility aliases (width/height) while exposing normalized
+ * dimensions and optional original import constraints when available.
+ */
 export function buildOverlayMetaFromOverlay(overlay) {
   const overlayMeta = {};
   if (!overlay) return overlayMeta;
@@ -32,6 +37,24 @@ export function buildOverlayMetaFromOverlay(overlay) {
 
   if (Number.isFinite(maxEdgePx)) {
     overlayMeta.maxEdgePx = maxEdgePx;
+  }
+
+  if (
+    Number.isFinite(normalizedWidth) &&
+    Number.isFinite(originalWidth) &&
+    normalizedWidth > 0 &&
+    originalWidth > 0
+  ) {
+    overlayMeta.scaleX = normalizedWidth / originalWidth;
+  }
+
+  if (
+    Number.isFinite(normalizedHeight) &&
+    Number.isFinite(originalHeight) &&
+    normalizedHeight > 0 &&
+    originalHeight > 0
+  ) {
+    overlayMeta.scaleY = normalizedHeight / originalHeight;
   }
 
   return overlayMeta;
