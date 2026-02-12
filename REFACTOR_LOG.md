@@ -563,8 +563,8 @@ Probe check (post-extraction):
 
 - branch: refactor/phase11m-overlaymeta-scale-fields
 - base_commit: 818d216
-- phase_end_commit: PENDING
-- packet_commit: PENDING
+- phase_end_commit: 40b7ce2
+- packet_commit: 686af22
 - capture_method: codex-mcp (readiness gated)
 - url: http://localhost:8000/city-sim.html?refactorProbe=1
 - json_len: 3977
