@@ -611,7 +611,7 @@ Probe check (post-extraction):
 
 - branch: refactor/phase11p-phase11-packet-index
 - base_commit: af77516
-- phase_end_commit: PENDING
-- packet_commit: PENDING
+- phase_end_commit: c636f6a
+- packet_commit: 8b248be
 - capture_method: n/a (docs-only)
 - probe: NOT RUN (docs-only)
