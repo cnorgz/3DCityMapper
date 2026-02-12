@@ -25,12 +25,24 @@ function safeParseImageMeta(raw) {
   const scaleFactor = Number.isFinite(Number(raw.scaleFactor))
     ? Number(raw.scaleFactor)
     : 1;
+  const scaleX = Number.isFinite(Number(raw.scaleX))
+    ? Number(raw.scaleX)
+    : originalWidth > 0
+      ? width / originalWidth
+      : undefined;
+  const scaleY = Number.isFinite(Number(raw.scaleY))
+    ? Number(raw.scaleY)
+    : originalHeight > 0
+      ? height / originalHeight
+      : undefined;
   return {
     width,
     height,
     originalWidth,
     originalHeight,
     scaleFactor,
+    scaleX,
+    scaleY,
     name: raw.name || '',
     size: Number.isFinite(raw.size) ? raw.size : 0,
     lastModified: Number.isFinite(raw.lastModified) ? raw.lastModified : 0
@@ -127,6 +139,8 @@ export async function setFromFile(file) {
   const maxOriginal = Math.max(originalWidth, originalHeight);
   const maxNormalized = Math.max(normalized.width, normalized.height);
   const scaleFactor = maxOriginal > 0 ? maxNormalized / maxOriginal : 1;
+  const scaleX = originalWidth > 0 ? normalized.width / originalWidth : undefined;
+  const scaleY = originalHeight > 0 ? normalized.height / originalHeight : undefined;
 
   const meta = {
     width: normalized.width,
@@ -134,6 +148,8 @@ export async function setFromFile(file) {
     originalWidth,
     originalHeight,
     scaleFactor,
+    scaleX,
+    scaleY,
     name: file.name,
     size: file.size,
     lastModified: file.lastModified
