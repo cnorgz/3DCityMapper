@@ -649,7 +649,7 @@ Probe check (post-extraction):
 
 - branch: refactor/phase10d-inputs-editor-doc
 - base_commit: f36331d
-- phase_end_commit: PENDING
-- packet_commit: PENDING
+- phase_end_commit: 6d9102f
+- packet_commit: 89a6bb5
 - capture_method: n/a (docs-only)
 - probe: NOT RUN (docs-only)
