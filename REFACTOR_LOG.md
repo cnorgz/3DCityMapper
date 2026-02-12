@@ -653,3 +653,12 @@ Probe check (post-extraction):
 - packet_commit: 89a6bb5
 - capture_method: n/a (docs-only)
 - probe: NOT RUN (docs-only)
+
+### Phase 10e – Minimum Docs location normalize under `/docs`
+
+- branch: refactor/phase10e-docs-dir-normalize
+- base_commit: b3db947
+- phase_end_commit: PENDING
+- packet_commit: PENDING
+- capture_method: n/a (docs-only)
+- probe: NOT RUN (docs-only)
