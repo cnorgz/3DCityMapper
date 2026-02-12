@@ -579,8 +579,8 @@ Probe check (post-extraction):
 
 - branch: refactor/phase11n-imagesource-meta-scale
 - base_commit: 686af22
-- phase_end_commit: PENDING
-- packet_commit: PENDING
+- phase_end_commit: 049b2de
+- packet_commit: 897c6c5
 - capture_method: codex-mcp (readiness gated)
 - url: http://localhost:8000/city-sim.html?refactorProbe=1
 - json_len: 3977
