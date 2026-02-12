@@ -1,4 +1,5 @@
 import { buildDraftBlueprint as buildDraftBlueprintDefault } from './DraftBlueprintBuilder.js';
+import { buildOverlayMetaFromOverlay } from './overlayMeta.js';
 
 export function createScannerController({
   getOverlayImage = () => null,
@@ -20,20 +21,7 @@ export function createScannerController({
         if (!overlay || !overlay.dataUrl) return { ok: false, reason: 'no-overlay-image' };
 
         const legendRules = getLegendRules();
-        const overlayMeta = {};
-        if (overlay.imageId !== undefined && overlay.imageId !== null) {
-          overlayMeta.imageId = overlay.imageId;
-        }
-        const normalizedWidth = overlay?.meta?.width ?? overlay?.width;
-        const normalizedHeight = overlay?.meta?.height ?? overlay?.height;
-        if (Number.isFinite(normalizedWidth)) {
-          overlayMeta.normalizedWidth = normalizedWidth;
-          overlayMeta.width = normalizedWidth;
-        }
-        if (Number.isFinite(normalizedHeight)) {
-          overlayMeta.normalizedHeight = normalizedHeight;
-          overlayMeta.height = normalizedHeight;
-        }
+        const overlayMeta = buildOverlayMetaFromOverlay(overlay);
 
         let draft = null;
         try {
