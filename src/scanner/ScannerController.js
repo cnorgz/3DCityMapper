@@ -71,11 +71,10 @@ export function createScannerController({
           ok: true,
           mode: 'placeholder-draft',
           draft: normalizedDraft,
+          draftBlueprint: normalizedDraft,
+          overlayMeta,
           legendRules
         };
-        if (Object.keys(overlayMeta).length > 0) {
-          result.overlayMeta = overlayMeta;
-        }
         return result;
       })
       .finally(() => {
