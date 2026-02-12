@@ -547,8 +547,8 @@ Probe check (post-extraction):
 
 - branch: refactor/phase11l-overlaymeta-maxedge-originaldims
 - base_commit: 67162f5
-- phase_end_commit: PENDING
-- packet_commit: PENDING
+- phase_end_commit: 63d3475
+- packet_commit: 782964f
 - capture_method: codex-mcp (readiness gated)
 - url: http://localhost:8000/city-sim.html?refactorProbe=1
 - json_len: 3977
