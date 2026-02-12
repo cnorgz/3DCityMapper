@@ -531,8 +531,8 @@ Probe check (post-extraction):
 
 - branch: refactor/phase11k-scanner-overlaymeta-helper
 - base_commit: 6be26fb
-- phase_end_commit: PENDING
-- packet_commit: PENDING
+- phase_end_commit: 636d43f
+- packet_commit: d3ca2bf
 - capture_method: codex-mcp (readiness gated)
 - url: http://localhost:8000/city-sim.html?refactorProbe=1
 - json_len: 3977
