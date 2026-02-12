@@ -8,6 +8,9 @@ export function buildOverlayMetaFromOverlay(overlay) {
 
   const normalizedWidth = overlay?.meta?.width ?? overlay?.width;
   const normalizedHeight = overlay?.meta?.height ?? overlay?.height;
+  const originalWidth = overlay?.meta?.originalWidth;
+  const originalHeight = overlay?.meta?.originalHeight;
+  const maxEdgePx = overlay?.meta?.maxEdgePx;
 
   if (Number.isFinite(normalizedWidth)) {
     overlayMeta.normalizedWidth = normalizedWidth;
@@ -17,6 +20,18 @@ export function buildOverlayMetaFromOverlay(overlay) {
   if (Number.isFinite(normalizedHeight)) {
     overlayMeta.normalizedHeight = normalizedHeight;
     overlayMeta.height = normalizedHeight;
+  }
+
+  if (Number.isFinite(originalWidth)) {
+    overlayMeta.originalWidth = originalWidth;
+  }
+
+  if (Number.isFinite(originalHeight)) {
+    overlayMeta.originalHeight = originalHeight;
+  }
+
+  if (Number.isFinite(maxEdgePx)) {
+    overlayMeta.maxEdgePx = maxEdgePx;
   }
 
   return overlayMeta;
