@@ -631,6 +631,15 @@ Probe check (post-extraction):
 
 - branch: refactor/phase10b-coordinates-doc
 - base_commit: 8147ad0
+- phase_end_commit: a471ae8
+- packet_commit: 8156bc4
+- capture_method: n/a (docs-only)
+- probe: NOT RUN (docs-only)
+
+### Phase 10c – SCANNER.md
+
+- branch: refactor/phase10c-scanner-doc
+- base_commit: 8156bc4
 - phase_end_commit: PENDING
 - packet_commit: PENDING
 - capture_method: n/a (docs-only)
