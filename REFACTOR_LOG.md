@@ -640,6 +640,15 @@ Probe check (post-extraction):
 
 - branch: refactor/phase10c-scanner-doc
 - base_commit: 8156bc4
+- phase_end_commit: a455f2d
+- packet_commit: f36331d
+- capture_method: n/a (docs-only)
+- probe: NOT RUN (docs-only)
+
+### Phase 10d – INPUTS.md + EDITOR_TOOLS.md
+
+- branch: refactor/phase10d-inputs-editor-doc
+- base_commit: f36331d
 - phase_end_commit: PENDING
 - packet_commit: PENDING
 - capture_method: n/a (docs-only)
