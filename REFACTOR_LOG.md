@@ -622,6 +622,15 @@ Probe check (post-extraction):
 
 - branch: refactor/phase10a-architecture-doc
 - base_commit: 720fabe
+- phase_end_commit: c4a2688
+- packet_commit: 8147ad0
+- capture_method: n/a (docs-only)
+- probe: NOT RUN (docs-only)
+
+### Phase 10b – COORDINATES.md
+
+- branch: refactor/phase10b-coordinates-doc
+- base_commit: 8147ad0
 - phase_end_commit: PENDING
 - packet_commit: PENDING
 - capture_method: n/a (docs-only)
