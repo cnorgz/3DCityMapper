@@ -615,3 +615,14 @@ Probe check (post-extraction):
 - packet_commit: 8b248be
 - capture_method: n/a (docs-only)
 - probe: NOT RUN (docs-only)
+
+## Phase 10 (Minimum Docs Closure)
+
+### Phase 10a – ARCHITECTURE.md
+
+- branch: refactor/phase10a-architecture-doc
+- base_commit: 720fabe
+- phase_end_commit: PENDING
+- packet_commit: PENDING
+- capture_method: n/a (docs-only)
+- probe: NOT RUN (docs-only)
