@@ -1,1 +1,3 @@
-This doc moved to docs/ARCHITECTURE.md
+# ARCHITECTURE.md (Stub)
+
+Canonical: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)

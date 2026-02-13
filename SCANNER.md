@@ -1,1 +1,3 @@
-This doc moved to docs/SCANNER.md
+# SCANNER.md (Stub)
+
+Canonical: [docs/SCANNER.md](docs/SCANNER.md)

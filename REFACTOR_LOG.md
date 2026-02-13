@@ -743,3 +743,12 @@ Probe check (post-extraction):
 - packet_commit: PENDING
 - capture_method: n/a (docs-only)
 - probe: NOT RUN (docs-only)
+
+### Phase 10o – Root stub formatting normalize
+
+- branch: refactor/phase10o-root-stub-normalize
+- base_commit: e4c3653
+- phase_end_commit: PENDING
+- packet_commit: PENDING
+- capture_method: n/a (docs-only)
+- probe: NOT RUN (docs-only)

@@ -1,1 +1,3 @@
-This doc moved to docs/BLUEPRINT_SPEC.md
+# BLUEPRINT_SPEC.md (Stub)
+
+Canonical: [docs/BLUEPRINT_SPEC.md](docs/BLUEPRINT_SPEC.md)

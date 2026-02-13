@@ -1,1 +1,3 @@
-This doc moved to docs/PERSISTENCE.md
+# PERSISTENCE.md (Stub)
+
+Canonical: [docs/PERSISTENCE.md](docs/PERSISTENCE.md)

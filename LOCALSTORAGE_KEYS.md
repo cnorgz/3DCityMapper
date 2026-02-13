@@ -1,1 +1,3 @@
-This doc moved to docs/LOCALSTORAGE_KEYS.md
+# LOCALSTORAGE_KEYS.md (Stub)
+
+Canonical: [docs/LOCALSTORAGE_KEYS.md](docs/LOCALSTORAGE_KEYS.md)

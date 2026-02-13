@@ -1,1 +1,3 @@
-This doc moved to docs/INPUTS.md
+# INPUTS.md (Stub)
+
+Canonical: [docs/INPUTS.md](docs/INPUTS.md)

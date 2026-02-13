@@ -1,1 +1,3 @@
-This doc moved to docs/COORDINATES.md
+# COORDINATES.md (Stub)
+
+Canonical: [docs/COORDINATES.md](docs/COORDINATES.md)
