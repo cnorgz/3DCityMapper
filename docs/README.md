@@ -1,5 +1,8 @@
 # 3DCityMapper Docs Index
 
+See also:
+- `docs/DOCS_INDEX.md` for canonical docs vs root stub policy.
+
 Read first:
 - `docs/ARCHITECTURE.md`
 - `docs/COORDINATES.md`

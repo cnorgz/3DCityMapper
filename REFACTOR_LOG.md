@@ -734,3 +734,12 @@ Probe check (post-extraction):
 - packet_commit: PENDING
 - capture_method: n/a (docs-only)
 - probe: NOT RUN (docs-only)
+
+### Phase 10n – Canonical docs index + stub policy
+
+- branch: refactor/phase10n-docs-index-map
+- base_commit: 70d63fa
+- phase_end_commit: PENDING
+- packet_commit: PENDING
+- capture_method: n/a (docs-only)
+- probe: NOT RUN (docs-only)
