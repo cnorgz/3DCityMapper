@@ -732,8 +732,8 @@ Probe check (post-extraction):
 
 - branch: refactor/phase11q-phase11-packet-index-refresh
 - base_commit: 7f886fb
-- phase_end_commit: PENDING
-- packet_commit: PENDING
+- phase_end_commit: 8d10c51
+- packet_commit: 6ad41cd
 - capture_method: n/a (docs-only)
 - probe: NOT RUN (docs-only)
 
@@ -741,8 +741,8 @@ Probe check (post-extraction):
 
 - branch: refactor/phase11r-scanner-doc-overlaymeta-schema
 - base_commit: 6ad41cd
-- phase_end_commit: PENDING
-- packet_commit: PENDING
+- phase_end_commit: a1393d8
+- packet_commit: 86025e3
 - capture_method: n/a (docs-only)
 - probe: NOT RUN (docs-only)
 
@@ -750,8 +750,8 @@ Probe check (post-extraction):
 
 - branch: refactor/phase11s-coordinates-doc-overlay-normalize-link
 - base_commit: 86025e3
-- phase_end_commit: PENDING
-- packet_commit: PENDING
+- phase_end_commit: 7369cd5
+- packet_commit: 9a1f3b0
 - capture_method: n/a (docs-only)
 - probe: NOT RUN (docs-only)
 
@@ -759,6 +759,15 @@ Probe check (post-extraction):
 
 - branch: refactor/phase11t-blueprint-spec-scanner-output-note
 - base_commit: 9a1f3b0
+- phase_end_commit: ea21dd7
+- packet_commit: 5193d35
+- capture_method: n/a (docs-only)
+- probe: NOT RUN (docs-only)
+
+### Phase 11u – REFACTOR_LOG metadata sweep for Phase 10/11
+
+- branch: refactor/phase11u-log-metadata-sweep-10-11
+- base_commit: 5193d35
 - phase_end_commit: PENDING
 - packet_commit: PENDING
 - capture_method: n/a (docs-only)
@@ -768,8 +777,8 @@ Probe check (post-extraction):
 
 - branch: refactor/phase10m-phase10-packet-index-refresh
 - base_commit: bf96fef
-- phase_end_commit: PENDING
-- packet_commit: PENDING
+- phase_end_commit: 527a133
+- packet_commit: 70d63fa
 - capture_method: n/a (docs-only)
 - probe: NOT RUN (docs-only)
 
@@ -777,8 +786,8 @@ Probe check (post-extraction):
 
 - branch: refactor/phase10n-docs-index-map
 - base_commit: 70d63fa
-- phase_end_commit: PENDING
-- packet_commit: PENDING
+- phase_end_commit: 7b34dd5
+- packet_commit: e4c3653
 - capture_method: n/a (docs-only)
 - probe: NOT RUN (docs-only)
 
@@ -786,8 +795,8 @@ Probe check (post-extraction):
 
 - branch: refactor/phase10o-root-stub-normalize
 - base_commit: e4c3653
-- phase_end_commit: PENDING
-- packet_commit: PENDING
+- phase_end_commit: 77715e0
+- packet_commit: 31fbfc5
 - capture_method: n/a (docs-only)
 - probe: NOT RUN (docs-only)
 
@@ -795,8 +804,8 @@ Probe check (post-extraction):
 
 - branch: refactor/phase10p-doc-links-sanity-2
 - base_commit: 31fbfc5
-- phase_end_commit: PENDING
-- packet_commit: PENDING
+- phase_end_commit: 3d2d676
+- packet_commit: 67065ce
 - capture_method: n/a (docs-only)
 - probe: NOT RUN (docs-only)
 
@@ -804,7 +813,7 @@ Probe check (post-extraction):
 
 - branch: refactor/phase10q-docs-readme-structure
 - base_commit: 67065ce
-- phase_end_commit: PENDING
-- packet_commit: PENDING
+- phase_end_commit: 5fccf75
+- packet_commit: 7f886fb
 - capture_method: n/a (docs-only)
 - probe: NOT RUN (docs-only)
