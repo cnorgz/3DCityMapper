@@ -31,6 +31,13 @@ Latest scope bundle: `docs/ai/UPLOAD_BUNDLE_PHASE14.md`.
   - Minimal upload set: `REFACTOR_LOG.md` + `docs/ai/UPLOAD_BUNDLE_MASTER.md` + `docs/ai/UPLOAD_BUNDLE_PHASE14.md`
   - Optional deep evidence: `docs/ai/review_packet_phase14.md`
 
+- `docs/ai/UPLOAD_BUNDLE_PHASE15_FINAL.md`
+  - Coverage: final wrap, merge/handoff readiness, and final parity stamp.
+  - Minimal upload set: `REFACTOR_LOG.md` + `docs/ai/UPLOAD_BUNDLE_MASTER.md` + `docs/ai/UPLOAD_BUNDLE_PHASE15_FINAL.md`
+  - Optional deep evidence: `docs/ai/review_packet_phase15.md`
+
+Latest scope bundle: `docs/ai/UPLOAD_BUNDLE_PHASE15_FINAL.md`.
+
 ## Default Recommendation
 For SeniorDev handoffs, upload:
 1. `REFACTOR_LOG.md`

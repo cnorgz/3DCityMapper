@@ -6,6 +6,7 @@ Bundle means single markdown bundle, not zip.
 1. `REFACTOR_LOG.md`
 2. `docs/ai/UPLOAD_BUNDLE_MASTER.md`
 3. One scope-specific bundle, usually:
+   - `docs/ai/UPLOAD_BUNDLE_PHASE15_FINAL.md`, or
    - `docs/ai/UPLOAD_BUNDLE_PHASE0-9.md`, or
    - `docs/ai/UPLOAD_BUNDLE_PHASE14.md`, or
    - `docs/ai/UPLOAD_BUNDLE_PHASE12.md`, or

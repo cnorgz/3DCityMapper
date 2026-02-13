@@ -11,6 +11,7 @@
 - Phases 10–11: docs closure + scanner placeholder scaffolding completed.
 - Phase 12: post-plan wrap-up completed (upload simplification, docs/tooling audits, final validation probe).
 - Phase 14: deferred scanner questions resolved at docs/spec level (`docs/SCANNER_DECISIONS.md`).
+- Phase 15: final wrap completed (merge checklist + handoff routing + final probe stamp).
 
 Source of truth: `REFACTOR_LOG.md`.
 
@@ -24,6 +25,9 @@ Resolved in docs via `docs/SCANNER_DECISIONS.md`:
 - Implement legend and marker parsing in scanner runtime modules.
 - Add confidence/error telemetry for unresolved scan candidates.
 - Keep parity-gated validation active while moving from placeholder to inference.
+
+## Latest Probe
+- See `REFACTOR_LOG.md` Phase 15 entry for latest readiness-gated parity fields and decision.
 
 ## What To Upload For Review
 Use the 3-file rule:
