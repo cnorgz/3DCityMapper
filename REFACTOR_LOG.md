@@ -671,3 +671,12 @@ Probe check (post-extraction):
 - packet_commit: PENDING
 - capture_method: n/a (docs-only)
 - probe: NOT RUN (docs-only)
+
+### Phase 10g – Docs landing page under `/docs/README.md`
+
+- branch: refactor/phase10g-docs-readme
+- base_commit: 3de43d0
+- phase_end_commit: PENDING
+- packet_commit: PENDING
+- capture_method: n/a (docs-only)
+- probe: NOT RUN (docs-only)
