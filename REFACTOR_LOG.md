@@ -667,8 +667,8 @@ Probe check (post-extraction):
 
 - branch: refactor/phase10f-docs-dir-normalize-extra
 - base_commit: 6f1c9b7
-- phase_end_commit: PENDING
-- packet_commit: PENDING
+- phase_end_commit: 999f6ad
+- packet_commit: 3de43d0
 - capture_method: n/a (docs-only)
 - probe: NOT RUN (docs-only)
 
@@ -676,8 +676,8 @@ Probe check (post-extraction):
 
 - branch: refactor/phase10g-docs-readme
 - base_commit: 3de43d0
-- phase_end_commit: PENDING
-- packet_commit: PENDING
+- phase_end_commit: 2ae3523
+- packet_commit: 3da1d2e
 - capture_method: n/a (docs-only)
 - probe: NOT RUN (docs-only)
 
@@ -685,8 +685,8 @@ Probe check (post-extraction):
 
 - branch: refactor/phase10h-contracts-doc
 - base_commit: 3da1d2e
-- phase_end_commit: PENDING
-- packet_commit: PENDING
+- phase_end_commit: 74892c4
+- packet_commit: e0d7111
 - capture_method: n/a (docs-only)
 - probe: NOT RUN (docs-only)
 
@@ -694,8 +694,8 @@ Probe check (post-extraction):
 
 - branch: refactor/phase10i-phase10-packet-index
 - base_commit: e0d7111
-- phase_end_commit: PENDING
-- packet_commit: PENDING
+- phase_end_commit: 132d09d
+- packet_commit: 782c8e9
 - capture_method: n/a (docs-only)
 - probe: NOT RUN (docs-only)
 
@@ -703,8 +703,8 @@ Probe check (post-extraction):
 
 - branch: refactor/phase10j-doc-links-sanity
 - base_commit: 782c8e9
-- phase_end_commit: PENDING
-- packet_commit: PENDING
+- phase_end_commit: b0c60d8
+- packet_commit: ad6561e
 - capture_method: n/a (docs-only)
 - probe: NOT RUN (docs-only)
 
@@ -712,6 +712,15 @@ Probe check (post-extraction):
 
 - branch: refactor/phase10k-archive-note
 - base_commit: ad6561e
+- phase_end_commit: 8ad7760
+- packet_commit: be26321
+- capture_method: n/a (docs-only)
+- probe: NOT RUN (docs-only)
+
+### Phase 10l – Phase 10 log completeness scan
+
+- branch: refactor/phase10l-phase10-log-scan
+- base_commit: be26321
 - phase_end_commit: PENDING
 - packet_commit: PENDING
 - capture_method: n/a (docs-only)
