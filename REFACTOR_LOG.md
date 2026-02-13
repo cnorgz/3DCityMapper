@@ -680,3 +680,12 @@ Probe check (post-extraction):
 - packet_commit: PENDING
 - capture_method: n/a (docs-only)
 - probe: NOT RUN (docs-only)
+
+### Phase 10h – Contracts cheat sheet
+
+- branch: refactor/phase10h-contracts-doc
+- base_commit: 3da1d2e
+- phase_end_commit: PENDING
+- packet_commit: PENDING
+- capture_method: n/a (docs-only)
+- probe: NOT RUN (docs-only)
