@@ -786,8 +786,8 @@ Probe check (post-extraction):
 
 - branch: refactor/phase11w-upload-bundle-compress
 - base_commit: 90082e5
-- phase_end_commit: PENDING
-- packet_commit: PENDING
+- phase_end_commit: 7444bdc
+- packet_commit: 3bb34e3
 - capture_method: n/a (docs/tooling-only)
 - probe: NOT RUN (docs-only)
 
