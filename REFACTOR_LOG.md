@@ -865,8 +865,8 @@ Probe check (post-extraction):
 
 - branch: refactor/phase15-final-wrap-merge-ready
 - base_commit: b49b301
-- phase_end_commit: PENDING
-- packet_commit: PENDING
+- phase_end_commit: 7d65f7a
+- packet_commit: add3733
 - capture_method: codex-mcp (readiness gated)
 - url: http://localhost:8000/city-sim.html?refactorProbe=1
 - json_len: 3978
