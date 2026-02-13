@@ -662,3 +662,12 @@ Probe check (post-extraction):
 - packet_commit: 9b38c37
 - capture_method: n/a (docs-only)
 - probe: NOT RUN (docs-only)
+
+### Phase 10f – Extra docs root stubs normalized
+
+- branch: refactor/phase10f-docs-dir-normalize-extra
+- base_commit: 6f1c9b7
+- phase_end_commit: PENDING
+- packet_commit: PENDING
+- capture_method: n/a (docs-only)
+- probe: NOT RUN (docs-only)
