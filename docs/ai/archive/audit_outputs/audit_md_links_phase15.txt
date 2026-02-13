@@ -1,4 +1,4 @@
-# Markdown Link Audit (Phase 12)
+# Markdown Link Audit
 
 repo_root=/Users/xavstack/Documents/1.CODE/1_Games/City_simulator/TADHG
 scan_patterns=](./...) and ](/docs/...)
