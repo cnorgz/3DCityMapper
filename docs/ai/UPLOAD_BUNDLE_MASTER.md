@@ -38,6 +38,12 @@ Latest scope bundle: `docs/ai/UPLOAD_BUNDLE_PHASE14.md`.
 
 Latest scope bundle: `docs/ai/UPLOAD_BUNDLE_PHASE15_FINAL.md`.
 
+## Completion Snapshot (v7_rev4)
+- `docs/ai/REFACTOR_COMPLETE_v7_rev4.md`
+  - Coverage: final completion snapshot after merge-candidate validation.
+  - Minimal upload set: `REFACTOR_LOG.md` + `docs/ai/UPLOAD_BUNDLE_MASTER.md` + `docs/ai/REFACTOR_COMPLETE_v7_rev4.md`
+  - Optional: `docs/ai/PR_DESCRIPTION_phase15_merge.md`
+
 ## Default Recommendation
 For SeniorDev handoffs, upload:
 1. `REFACTOR_LOG.md`

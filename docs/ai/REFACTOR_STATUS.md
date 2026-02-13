@@ -4,6 +4,13 @@
 - branch: refactor/phase13c-refactor-status-doc
 - tip_commit: 910d753
 
+## Merge-Candidate Status
+- branch: `refactor/merge-candidate-phase15`
+- master base: `ec0c1b1`
+- merge head: `e3bcc26`
+- probe baseline hash match: `yes`
+- parity: `PASS`
+
 ## Completion Status (Phases 0–12)
 - Phase 0: baseline parity anchor captured.
 - Phases 1–4: early modular groundwork completed (see phase packets and log).
