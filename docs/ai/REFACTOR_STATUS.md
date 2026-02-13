@@ -10,6 +10,7 @@
 - Phases 5–9: renderer/editor/ui extraction series completed with parity-gated probes.
 - Phases 10–11: docs closure + scanner placeholder scaffolding completed.
 - Phase 12: post-plan wrap-up completed (upload simplification, docs/tooling audits, final validation probe).
+- Phase 14: deferred scanner questions resolved at docs/spec level (`docs/SCANNER_DECISIONS.md`).
 
 Source of truth: `REFACTOR_LOG.md`.
 

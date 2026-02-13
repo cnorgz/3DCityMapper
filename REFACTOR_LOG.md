@@ -856,7 +856,7 @@ Probe check (post-extraction):
 
 - branch: refactor/phase14-scanner-questions-decisions-doc
 - base_commit: f15e86b
-- phase_end_commit: PENDING
-- packet_commit: PENDING
+- phase_end_commit: 21d22cb
+- packet_commit: dcd04c1
 - capture_method: n/a (docs/tooling-only)
 - probe: NOT RUN (docs-only)

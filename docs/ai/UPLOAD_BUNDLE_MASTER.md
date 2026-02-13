@@ -2,6 +2,7 @@
 
 Central index of upload-friendly markdown bundle docs.
 Policy: NO ZIP uploads by default. Use markdown bundles.
+Latest scope bundle: `docs/ai/UPLOAD_BUNDLE_PHASE14.md`.
 
 ## Bundles
 
