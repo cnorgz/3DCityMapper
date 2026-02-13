@@ -68,3 +68,6 @@ A “blank” blueprint is created by normalizing an empty object `{}` via the s
 - `transit[]` is legacy; during normalization, any entries are merged into `roads[]` and `transit` is cleared.
 - Curve indices are stored but expanded at render time. Their interpretation is consistent with current runtime behavior; no schema redesign is introduced in Phase 3.
 - The future scanner will output this same schema; do not change keys during refactor without a migration plan.
+- Current scanner scaffolding produces a placeholder DraftBlueprint first.
+- That DraftBlueprint is validated and normalized through existing pipeline hooks before becoming active BlueprintModel data.
+- This remains descriptive only; no new scanner inference requirements are introduced here.

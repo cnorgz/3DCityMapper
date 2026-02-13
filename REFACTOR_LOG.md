@@ -755,6 +755,15 @@ Probe check (post-extraction):
 - capture_method: n/a (docs-only)
 - probe: NOT RUN (docs-only)
 
+### Phase 11t – Blueprint spec scanner output note
+
+- branch: refactor/phase11t-blueprint-spec-scanner-output-note
+- base_commit: 9a1f3b0
+- phase_end_commit: PENDING
+- packet_commit: PENDING
+- capture_method: n/a (docs-only)
+- probe: NOT RUN (docs-only)
+
 ### Phase 10m – Phase 10 packet index refresh
 
 - branch: refactor/phase10m-phase10-packet-index-refresh
