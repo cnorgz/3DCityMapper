@@ -12,3 +12,6 @@ Extra docs:
 - `docs/PERSISTENCE.md`
 - `docs/DEV_DEBUG.md`
 - `docs/LOCALSTORAGE_KEYS.md`
+
+Note:
+- Older historical docs may exist under `/archive`; they are not authoritative.
