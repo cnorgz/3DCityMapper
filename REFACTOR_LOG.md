@@ -773,6 +773,15 @@ Probe check (post-extraction):
 - capture_method: n/a (docs-only)
 - probe: NOT RUN (docs-only)
 
+### Phase 11v – Packet evidence bundle process doc
+
+- branch: refactor/phase11v-packet-evidence-bundle-doc
+- base_commit: 8ee6584
+- phase_end_commit: PENDING
+- packet_commit: PENDING
+- capture_method: n/a (docs-only)
+- probe: NOT RUN (docs-only)
+
 ### Phase 10m – Phase 10 packet index refresh
 
 - branch: refactor/phase10m-phase10-packet-index-refresh
