@@ -725,3 +725,12 @@ Probe check (post-extraction):
 - packet_commit: ac7a562
 - capture_method: n/a (docs-only)
 - probe: NOT RUN (docs-only)
+
+### Phase 10m – Phase 10 packet index refresh
+
+- branch: refactor/phase10m-phase10-packet-index-refresh
+- base_commit: bf96fef
+- phase_end_commit: PENDING
+- packet_commit: PENDING
+- capture_method: n/a (docs-only)
+- probe: NOT RUN (docs-only)
