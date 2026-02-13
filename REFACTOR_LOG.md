@@ -698,3 +698,12 @@ Probe check (post-extraction):
 - packet_commit: PENDING
 - capture_method: n/a (docs-only)
 - probe: NOT RUN (docs-only)
+
+### Phase 10j – Doc links sanity verification
+
+- branch: refactor/phase10j-doc-links-sanity
+- base_commit: 782c8e9
+- phase_end_commit: PENDING
+- packet_commit: PENDING
+- capture_method: n/a (docs-only)
+- probe: NOT RUN (docs-only)
