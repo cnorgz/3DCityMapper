@@ -726,6 +726,17 @@ Probe check (post-extraction):
 - capture_method: n/a (docs-only)
 - probe: NOT RUN (docs-only)
 
+## Phase 11 (Docs Refresh Extensions)
+
+### Phase 11q – Phase 11 packet index refresh
+
+- branch: refactor/phase11q-phase11-packet-index-refresh
+- base_commit: 7f886fb
+- phase_end_commit: PENDING
+- packet_commit: PENDING
+- capture_method: n/a (docs-only)
+- probe: NOT RUN (docs-only)
+
 ### Phase 10m – Phase 10 packet index refresh
 
 - branch: refactor/phase10m-phase10-packet-index-refresh
