@@ -2,6 +2,8 @@
 
 ## External Upload Bundle
 - Upload facade: `docs/ai/UPLOAD_BUNDLE_PHASE10-11.md`
+- Phase 11 code facade: `docs/ai/UPLOAD_BUNDLE_PHASE11-CODE.md`
+- Master index: `docs/ai/UPLOAD_BUNDLE_MASTER.md`
 - Optional mega packet: `docs/ai/review_packet_bundle_phase10-11_docs.md`
 
 ## Primary Packets
