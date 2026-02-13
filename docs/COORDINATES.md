@@ -24,3 +24,4 @@
 - Overlay calibration maps normalized image coordinates to world/map coordinates.
 - Probe checks that runtime mapping remains consistent after refactor extraction.
 - This document defines contracts and terms only; it does not promise specific implementation internals.
+- See `docs/SCANNER.md` for current OverlayMeta fields used to carry normalized/original image dimensions into scanner plumbing.

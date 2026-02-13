@@ -746,6 +746,15 @@ Probe check (post-extraction):
 - capture_method: n/a (docs-only)
 - probe: NOT RUN (docs-only)
 
+### Phase 11s – Coordinates docs link to overlay normalization notes
+
+- branch: refactor/phase11s-coordinates-doc-overlay-normalize-link
+- base_commit: 86025e3
+- phase_end_commit: PENDING
+- packet_commit: PENDING
+- capture_method: n/a (docs-only)
+- probe: NOT RUN (docs-only)
+
 ### Phase 10m – Phase 10 packet index refresh
 
 - branch: refactor/phase10m-phase10-packet-index-refresh
