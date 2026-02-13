@@ -721,7 +721,7 @@ Probe check (post-extraction):
 
 - branch: refactor/phase10l-phase10-log-scan
 - base_commit: be26321
-- phase_end_commit: PENDING
-- packet_commit: PENDING
+- phase_end_commit: c7f0703
+- packet_commit: ac7a562
 - capture_method: n/a (docs-only)
 - probe: NOT RUN (docs-only)
