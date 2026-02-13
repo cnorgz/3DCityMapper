@@ -35,7 +35,7 @@ while IFS=: read -r file line _ match; do
 done < "$tmp_links"
 
 {
-  echo "# Markdown Link Audit (Phase 12)"
+  echo "# Markdown Link Audit"
   echo
   echo "repo_root=$repo_root"
   echo "scan_patterns=](./...) and ](/docs/...)"
