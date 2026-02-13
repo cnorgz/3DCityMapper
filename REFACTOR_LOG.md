@@ -737,6 +737,15 @@ Probe check (post-extraction):
 - capture_method: n/a (docs-only)
 - probe: NOT RUN (docs-only)
 
+### Phase 11r – Scanner docs OverlayMeta schema note
+
+- branch: refactor/phase11r-scanner-doc-overlaymeta-schema
+- base_commit: 6ad41cd
+- phase_end_commit: PENDING
+- packet_commit: PENDING
+- capture_method: n/a (docs-only)
+- probe: NOT RUN (docs-only)
+
 ### Phase 10m – Phase 10 packet index refresh
 
 - branch: refactor/phase10m-phase10-packet-index-refresh

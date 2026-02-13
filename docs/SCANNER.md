@@ -15,6 +15,14 @@
 - Structured result status (`ok`, `reason`, `errors` when available).
 - Overlay provenance threading (`overlayMeta`) for downstream diagnostics and calibration continuity.
 
+## OverlayMeta (Current Fields)
+- `imageId`: stable identity string for the currently loaded overlay image source (if available).
+- `normalizedWidth` / `normalizedHeight`: normalized dimensions used by scanner/mapping.
+- `width` / `height`: compatibility aliases for normalized dimensions.
+- `originalWidth` / `originalHeight`: original imported image dimensions when present.
+- `maxEdgePx`: normalization max-edge constraint when present in source metadata.
+- `scaleX` / `scaleY`: normalized-to-original scale ratios when both dimensions are finite and positive.
+
 ## Key Modules (Names Only)
 - `src/scanner/ScannerController.js`
 - `src/scanner/ImageSource.js`
