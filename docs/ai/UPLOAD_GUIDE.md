@@ -1,9 +1,12 @@
 # Upload Guide
 
+Bundle means single markdown bundle, not zip.
+
 ## What You Upload To SeniorDev (3 files)
 1. `REFACTOR_LOG.md`
 2. `docs/ai/UPLOAD_BUNDLE_MASTER.md`
 3. One scope-specific bundle, usually:
+   - `docs/ai/UPLOAD_BUNDLE_PHASE0-9.md`, or
    - `docs/ai/UPLOAD_BUNDLE_PHASE12.md`, or
    - `docs/ai/UPLOAD_BUNDLE_PHASE10-11.md`, or
    - `docs/ai/UPLOAD_BUNDLE_PHASE11-CODE.md`
