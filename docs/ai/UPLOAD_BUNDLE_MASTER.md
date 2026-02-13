@@ -1,6 +1,7 @@
 # Upload Bundle Master Index
 
 Central index of upload-friendly markdown bundle docs.
+Policy: NO ZIP uploads by default. Use markdown bundles.
 
 ## Bundles
 
@@ -14,9 +15,15 @@ Central index of upload-friendly markdown bundle docs.
   - Minimal upload set: `REFACTOR_LOG.md` + `docs/ai/UPLOAD_BUNDLE_PHASE11-CODE.md`
   - Optional deep evidence: `docs/ai/review_packet_bundle_phase11_code.md`
 
-## Default Recommendation
-For most SeniorDev handoffs, upload:
-1. `REFACTOR_LOG.md`
-2. One bundle doc from this index matching the review scope.
+- `docs/ai/UPLOAD_BUNDLE_PHASE12.md`
+  - Coverage: Phase 12 post-plan wrap-up and review simplification.
+  - Minimal upload set: `REFACTOR_LOG.md` + `docs/ai/UPLOAD_BUNDLE_MASTER.md` + `docs/ai/UPLOAD_BUNDLE_PHASE12.md`
+  - Optional deep evidence: `docs/ai/review_packet_phase12.md`
 
-Add the optional deep evidence file only when command-level detail is requested.
+## Default Recommendation
+For SeniorDev handoffs, upload:
+1. `REFACTOR_LOG.md`
+2. `docs/ai/UPLOAD_BUNDLE_MASTER.md`
+3. One scope-specific bundle doc from this index.
+
+Add one optional deep-evidence file only when command-level detail is requested.
