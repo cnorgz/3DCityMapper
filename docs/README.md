@@ -3,6 +3,11 @@
 See also:
 - `docs/DOCS_INDEX.md` for canonical docs vs root stub policy.
 
+## Structure
+- Canonical docs live under `/docs`.
+- Root-level `*.md` files are convenience stubs.
+- Index and policy reference: [DOCS_INDEX.md](DOCS_INDEX.md).
+
 Read first:
 - [ARCHITECTURE](ARCHITECTURE.md)
 - [COORDINATES](COORDINATES.md)

@@ -761,3 +761,12 @@ Probe check (post-extraction):
 - packet_commit: PENDING
 - capture_method: n/a (docs-only)
 - probe: NOT RUN (docs-only)
+
+### Phase 10q – Docs README structure note
+
+- branch: refactor/phase10q-docs-readme-structure
+- base_commit: 67065ce
+- phase_end_commit: PENDING
+- packet_commit: PENDING
+- capture_method: n/a (docs-only)
+- probe: NOT RUN (docs-only)
