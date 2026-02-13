@@ -533,6 +533,9 @@
       <button class="btn" id="blueprintCopy" style="flex: 1; padding: 6px;">Copy JSON</button>
       <button class="btn" id="blueprintValidate" style="flex: 1; padding: 6px;">Validate</button>
     </div>
+    <div class="overlay-actions">
+      <button class="btn" id="overlayUpload" style="flex: 1; padding: 6px;">Upload Map</button>
+    </div>
     <textarea id="blueprintJson" placeholder="Paste blueprint JSON here"></textarea>
     <div id="blueprintStatus" class="overlay-help">Blueprint status: loaded from file.</div>
     <hr style="border: none; border-top: 1px solid rgba(100, 200, 255, 0.2); margin: 10px 0;" />
@@ -742,129 +745,117 @@
   
   <script type="module">
     import * as THREE from 'three';
-    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-    import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
     import { Line2 } from 'three/addons/lines/Line2.js';
     import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
     import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
     import { MapCoordMapper, createMapOverlay } from './src/mapOverlay.js';
+    import { createOverlayLayer } from './src/overlay/OverlayLayer.js';
+    import {
+      MAP_WIDTH,
+      MAP_HEIGHT,
+      MAP_OVERLAY_IMG_W,
+      MAP_OVERLAY_IMG_H,
+      MAP_OVERLAY_WORLD_W,
+      MAP_OVERLAY_WORLD_H,
+      GRID_STEP_X,
+      GRID_STEP_Z,
+      IS_DEV,
+      Y,
+      OVERLAY_DEFAULTS,
+      OVERLAY_LIMITS,
+      LINE_TYPES,
+      TRANSIT_TYPES,
+      USE_RIBBON_ROADS
+    } from './src/config/constants.js';
+    import {
+      COLORS,
+      POI_COLORS,
+      ROAD_LINE_STYLES,
+      TRANSIT_STYLES
+    } from './src/config/palette.js';
+    import {
+      LEGEND_LINE_COLORS,
+      LEGEND_TYPE_MAP,
+      ALLOWED_TYPE_CODES
+    } from './src/config/legendRules.js';
+    import { RENDER_FPS } from './src/config/renderPresets.js';
+    import { clampNumber, rng } from './src/utils/Math.js';
+    import { pointInPolygon, centroidNorm, distancePointToSegment } from './src/utils/GeometryMath.js';
+    import { disposeObject3D } from './src/utils/Dispose.js';
+    import { getItem, setItem } from './src/persistence/StateStore.js';
+    import { runMigrations } from './src/persistence/Migrations.js';
+    import { validateBlueprint as validateBlueprintCore } from './src/core/BlueprintValidator.js';
+    import { normalizeBlueprint } from './src/core/BlueprintNormalizer.js';
+    import { BlueprintModel } from './src/core/BlueprintModel.js';
+    import {
+      loadFromStore as loadOverlayImageFromStore,
+      getDataURL as getOverlayImageDataURL,
+      getImageId as getOverlayImageId,
+      getImageMeta as getOverlayImageMeta,
+      setFromFile as setOverlayImageFromFile
+    } from './src/scanner/ImageSource.js';
+    import { LEGEND_RULES as SCANNER_LEGEND_RULES } from './src/scanner/legendRules.js';
+    import { buildDraftBlueprint } from './src/scanner/DraftBlueprintBuilder.js';
+    import { createScannerController } from './src/scanner/ScannerController.js';
+    import { ensureExampleCity } from './src/demo/ExampleCityEntry.js';
+    import {
+      createBlueprintPreviewGroups,
+      buildBlueprintPreview,
+      clearBlueprintPreview
+    } from './src/render/BlueprintPreviewRenderer.js';
+    import { createSceneManager } from './src/render/SceneManager.js';
+    import { createLayerManager } from './src/render/LayerManager.js';
+    import { createViewModeController } from './src/render/ViewModeController.js';
+    import { createRenderLoop } from './src/render/RenderLoop.js';
+    import { getSharedWindowMaterials, getSharedWindowGeometry } from './src/render/MaterialLibrary.js';
+    import { createLegacyTerrain } from './src/render/TerrainLayer.js';
+    import { buildLegacyTerrainDefs } from './src/terrain/TerrainGenerator.js';
+    import { createLegacyRoads } from './src/render/RoadLayer.js';
+    import { buildLegacyRoadDefs } from './src/geometry/RoadGenerator.js';
+    import { buildLegacyBuildingDefs } from './src/geometry/BuildingGenerator.js';
+    import { createLegacyBuildings } from './src/render/BuildingLayer.js';
+    import { createZoneMeshes } from './src/render/ZoneLayer.js';
+    import { addProp } from './src/render/PropsLayer.js';
+    import { buildLegacyCity } from './src/render/CityRenderer.js';
+    import { createTrafficSystem } from './src/sim/TrafficSystem.js';
+    import { createEditorRebuildScheduler } from './src/editor/RebuildScheduler.js';
+    import { createEditorHistoryManager } from './src/editor/HistoryManager.js';
+    import { createEditorSnapEngine } from './src/editor/SnapEngine.js';
+    import { createEditorController } from './src/editor/EditorController.js';
+    import { createEditorHitTest } from './src/editor/HitTest.js';
+    import { createEditorInputRouter } from './src/editor/InputRouter.js';
+    import { createEditorGestures } from './src/editor/Gestures.js';
+    import { createPanelManager } from './src/ui/PanelManager.js';
+    import { createEventBus } from './src/ui/EventBus.js';
+    import { isDevMode } from './src/ui/DevMode.js';
+    import { createCityModeController } from './src/core/CityModeController.js';
+    import { createTrafficPanel } from './src/ui/panels/TrafficPanel.js';
+    import { createCityModePanel } from './src/ui/panels/CityModePanel.js';
+    import { createOverlayPanel } from './src/ui/panels/OverlayPanel.js';
+    import { createBlueprintPreviewPanel } from './src/ui/panels/BlueprintPreviewPanel.js';
+    import { createZoneInfoPanel } from './src/ui/panels/ZoneInfoPanel.js';
+    import { createDevHUDPanel } from './src/ui/panels/DevHUDPanel.js';
     
     // ============================================
     // CONFIGURATION
     // ============================================
-    const MAP_WIDTH = 1400;
-    const MAP_HEIGHT = 1000;
     
-    // Map overlay configuration
-    const MAP_OVERLAY_IMG_W = 1400;
-    const MAP_OVERLAY_IMG_H = 1000;
-    const MAP_OVERLAY_WORLD_W = MAP_WIDTH;
-    const MAP_OVERLAY_WORLD_H = MAP_HEIGHT;
-    const GRID_STEP_X = MAP_OVERLAY_WORLD_W / 20;
-    const GRID_STEP_Z = MAP_OVERLAY_WORLD_H / 20;
-   
-    const IS_DEV = true; // Set to false for production
-    
-    const Y = { terrainSea: -2, beach: -1, land: 0, island: 0.5, zones: 1.0, overlay: 1.015, roads: 1.02, buildings: 1.05 };
-    
-    // Color palette matching MAP.png
-    const COLORS = {
-      sea: 0x4a8cb8,
-      seaDeep: 0x3a7ca8,
-      beach: 0xe8d8a8,
-      land: 0xd4c4a4,
-      road: 0x505050,
-      sidewalk: 0x808080,
-      residential: 0xc85858,      // Q - Red
-      office: 0xe8c858,           // B - Yellow
-      commercial: 0x5878b8,       // ZC - Blue
-      garden: 0x58a858,           // J - Green
-      hospital: 0x888898,         // H - Grey
-      restaurant: 0xd88888,       // R - Pink/Red
-      police: 0x8b6b4b,           // PO - Brown
-      parking: 0xe89848,          // PK - Orange
-      mairie: 0xa88b6b,           // MA - Brown
-      hotel: 0x387848,            // H★ - Dark Green
-      stadium: 0xe8e8e8,          // S - White
-      transport: 0x88c888,        // T - Light Green
-      utilities: 0x707070,        // D - Grey
-      cinema: 0xb898c8,           // Ci - Purple
-      fairground: 0xc8a878,       // ff - Tan
-      port: 0x6898b8,             // P - Blue-grey
-    };
-    
-    // ============================================
-    // SEEDED RNG FOR DETERMINISTIC GENERATION
-    // ============================================
-    function mulberry32(seed) {
-      return function() {
-        let t = seed += 0x6D2B79F5;
-        t = Math.imul(t ^ (t >>> 15), t | 1);
-        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-      };
-    }
-    const rng = mulberry32(123456); // Change seed to regenerate the city
     
     // ============================================
     // SCENE SETUP
     // ============================================
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.0;
-    document.body.appendChild(renderer.domElement);
-
-const scene = new THREE.Scene();
+const sceneManager = createSceneManager({ container: document.body });
+const renderer = sceneManager.renderer;
+const scene = sceneManager.scene;
+const { orthoCamera, perspCamera, getActiveCamera, setActiveCamera: setSceneActiveCamera } = sceneManager.cameras;
+const controls = sceneManager.controls;
+const { ambientLight, sunLight, hemisphereLight } = sceneManager.lights;
 
 // ============================================
 // LAYERS SYSTEM
 // ============================================
-const LAYERS = {
-  terrain: new THREE.Group(),
-  overlay: new THREE.Group(),
-  zones: new THREE.Group(),
-  roads: new THREE.Group(),
-  buildings: new THREE.Group(),
-  props: new THREE.Group(),
-  fx: new THREE.Group(),
-  debug: new THREE.Group()
-};
-Object.values(LAYERS).forEach(g => scene.add(g));
-
-const BLUEPRINT_LAYERS = {
-  terrain: new THREE.Group(),
-  zones: new THREE.Group(),
-  roads: new THREE.Group(),
-  buildings: new THREE.Group(),
-  props: new THREE.Group(),
-  fx: new THREE.Group()
-};
-const blueprintRootGroup = new THREE.Group();
-blueprintRootGroup.name = 'BlueprintRoot';
-Object.values(BLUEPRINT_LAYERS).forEach(g => {
-  g.visible = false;
-  blueprintRootGroup.add(g);
-});
-
-// Blueprint traffic (Phase 6.1)
-const blueprintTraffic = {
-  group: new THREE.Group(),
-  cars: [],
-  paths: [],
-  lights: []
-};
-blueprintTraffic.group.name = 'BlueprintTraffic';
-
-function ensureBlueprintTrafficGroup() {
-  if (!BLUEPRINT_LAYERS.props.children.includes(blueprintTraffic.group)) {
-    BLUEPRINT_LAYERS.props.add(blueprintTraffic.group);
-  }
-}
-ensureBlueprintTrafficGroup();
+const layerManager = createLayerManager(scene);
+const { LAYERS, BLUEPRINT_LAYERS, blueprintRootGroup, blueprintTraffic, ensureBlueprintTrafficGroup } = layerManager;
 
 // ============================================
 // ZONE REGISTRY
@@ -884,28 +875,10 @@ const buildingWindowBatches = [];   // { lit: InstancedMesh, dark: InstancedMesh
 const skyscraperWindowBatches = []; // { lit: InstancedMesh, dark: InstancedMesh }
 
 // Shared fast window materials (opaque = much cheaper than transparent Physical)
-const WINDOW_MATS = (() => {
-  const day = new THREE.MeshStandardMaterial({
-    color: 0x9cc9ff,
-    roughness: 0.25,
-    metalness: 0.0,
-    envMapIntensity: 1.0,
-    transparent: false
-  });
-
-  const nightLit = day.clone();
-  nightLit.emissive.setHex(0xffaa44);
-  nightLit.emissiveIntensity = 1.4;
-
-  const nightDark = day.clone();
-  nightDark.emissive.setHex(0x101020);
-  nightDark.emissiveIntensity = 0.08;
-
-  return { day, nightLit, nightDark };
-})();
+const WINDOW_MATS = getSharedWindowMaterials();
 
 // Shared window geometry (normal buildings)
-const WINDOW_GEO = new THREE.PlaneGeometry(3, 3 * 1.3);
+const WINDOW_GEO = getSharedWindowGeometry();
 
 // Helper: build InstancedMesh from matrices
 const _tmpObj = new THREE.Object3D();
@@ -923,37 +896,14 @@ function makeInstanced(geo, mat, matrices) {
 let windmillsGroup = null;
 let ferrisWheelRef = null;
 
-// Environment map for reflections
-renderer.outputColorSpace = THREE.SRGBColorSpace;
-const pmrem = new THREE.PMREMGenerator(renderer);
-const envRT = pmrem.fromScene(new RoomEnvironment(), 0.04);
-scene.environment = envRT.texture;
-pmrem.dispose();
-
 // Map overlay and coordinate mapper
-const OVERLAY_STORAGE_KEY = 'tadhgCityOverlayCalib';
-const OVERLAY_DEFAULTS = {
-  offsetX: 0,
-  offsetZ: 0,
-  rotation: 0,
-  scale: 1,
-  opacity: 0.9,
-  dimmer: 0,
-  visible: true
-};
-const OVERLAY_LIMITS = {
-  offsetX: { min: -400, max: 400 },
-  offsetZ: { min: -400, max: 400 },
-  rotation: { min: -45, max: 45 },
-  scale: { min: 0.5, max: 1.5 },
-  opacity: { min: 0, max: 1 },
-  dimmer: { min: 0, max: 0.8 }
-};
-
 let mapOverlayGroup = null;
 let mapOverlayMesh = null;
 let overlayDimmer = null;
 let mapCoordMapper = null;
+let mapOverlayImgW = MAP_OVERLAY_IMG_W;
+let mapOverlayImgH = MAP_OVERLAY_IMG_H;
+let overlayLayer = null;
 let probeMarker = null;
 let overlaySettings = null;
 let overlayBounds = null;
@@ -963,6 +913,7 @@ let blueprintOutlineGroup = null;
 let blueprintMeshGroup = null;
 let blueprintCenterlineGroup = null;
 let blueprintOffsetDebugGroup = null;
+let blueprintPreviewGroups = null;
 let editorGroup = null;
 let editorDraftLine = null;
 let editorDraftGlowLine = null;
@@ -979,6 +930,19 @@ const debugSettings = {
   showOverlayBounds: false,
   showBlueprintOutlines: false,
   showRoadCenterlines: false
+};
+
+const PERSISTENCE_IMAGE_ID = 'demo';
+const PERSIST_KEYS = {
+  overlayCalib: `overlayCalib:${PERSISTENCE_IMAGE_ID}`,
+  overlayPanelCollapsed: 'ui.overlayPanelCollapsed',
+  editorSnapGrid: 'editor.snapGrid',
+  editorSnapPixels: 'editor.snapPixels',
+  editorPixelStep: 'editor.pixelStep',
+  trafficMaxCars: 'traffic.maxCars',
+  trafficSpeedScale: 'traffic.speedScale',
+  blueprintOpacity: 'blueprint.opacity',
+  blueprintShowLabels: 'blueprint.showLabels'
 };
 
   const editorState = {
@@ -1024,12 +988,91 @@ const editorHistory = {
 let blueprintCityEnabled = false;
 let blueprintZoneMeshes = [];
   let blueprintLabelGroup = null;
-  let editorRebuildRaf = null;
+  let editorRebuildScheduler = null;
+  let editorHistoryManager = null;
+  let editorSnapEngine = null;
+  let editorController = null;
+  let editorHitTest = null;
+  let editorInputRouter = null;
+  let editorGestures = null;
+  let panelManager = null;
+  let uiEventBus = null;
+  let trafficPanel = null;
+  let cityModePanel = null;
+  let overlayPanel = null;
+  let blueprintPreviewPanel = null;
+  let zoneInfoPanel = null;
+  let devHudPanel = null;
+  let cityModeController = null;
+  let scannerController = null;
+  let pendingScan = false;
+  let trafficSystem = null;
+  const devHudState = {
+    lastProbe: null
+  };
+  const cityModeState = {
+    mode: 'example'
+  };
+  const exampleCityEntryState = {
+    initialized: false,
+    pending: null
+  };
 
 const blueprintPreviewSettings = {
   opacity: 1,
   showLabels: false
 };
+
+function refreshBlueprintPreview() {
+  if (!blueprintData) return;
+  buildBlueprintFromData(blueprintData);
+}
+
+function setBlueprintPreviewOpacity(value) {
+  const clamped = clampNumber(Number.parseFloat(value), 0.1, 1);
+  blueprintPreviewSettings.opacity = clamped;
+  try {
+    setItem(PERSIST_KEYS.blueprintOpacity, clamped);
+  } catch (e) {
+    // ignore persistence errors
+  }
+  refreshBlueprintPreview();
+}
+
+function setBlueprintPreviewLabels(value) {
+  blueprintPreviewSettings.showLabels = !!value;
+  try {
+    setItem(PERSIST_KEYS.blueprintShowLabels, blueprintPreviewSettings.showLabels);
+  } catch (e) {
+    // ignore persistence errors
+  }
+  refreshBlueprintPreview();
+}
+
+function summarizeProbeForHUD(probeResult) {
+  if (!probeResult || typeof probeResult !== 'object') {
+    return { error: 'runRefactorProbe unavailable (open ?refactorProbe=1)' };
+  }
+  let len = null;
+  let sha = null;
+  try {
+    const json = JSON.stringify(probeResult);
+    len = json.length;
+  } catch (e) {
+    // ignore JSON errors for HUD summary
+  }
+  if (typeof probeResult.__hash === 'string') {
+    sha = probeResult.__hash;
+  }
+  return {
+    len,
+    sha,
+    sceneCounts: probeResult.sceneCounts || null,
+    blueprintCounts: probeResult.blueprintCounts || null,
+    overlayDrift: probeResult.overlayDrift || null,
+    error: probeResult.error || null
+  };
+}
 
 const panState = {
   active: false,
@@ -1041,50 +1084,6 @@ const panState = {
   deferredAction: null,
   touchPoints: new Map()
 };
-
-const LEGEND_LINE_COLORS = {
-  Q: 0xff3b3b,
-  B: 0xffe85c,
-  ZC: 0x2f7dff,
-  J: 0x30ff7a,
-  H: 0xc0c6d0,
-  R: 0xff5fa3,
-  PO: 0xb0723f,
-  PK: 0xffb347,
-  MA: 0xc08a62,
-  'H★': 0x32c46a,
-  S: 0xffffff,
-  T: 0x9bffb0,
-  D: 0xb0b0b0,
-  Ci: 0xd07bff,
-  ff: 0xffc06a,
-  P: 0x7fbfff,
-  '⚡': 0xfff04d,
-  '💧': 0x5fd0ff
-};
-
-const LEGEND_TYPE_MAP = {
-  Q: { label: 'Residential (Quartiers)', type: 'residential', color: LEGEND_LINE_COLORS.Q, height: 22, buildable: true },
-  B: { label: 'Offices (Bureaux)', type: 'office', color: LEGEND_LINE_COLORS.B, height: 32, buildable: true },
-  ZC: { label: 'Commercial Zone', type: 'commercial', color: LEGEND_LINE_COLORS.ZC, height: 26, buildable: true },
-  J: { label: 'Gardens/Parks (Jardins)', type: 'park', color: LEGEND_LINE_COLORS.J, height: 0, buildable: false },
-  H: { label: 'Hospital (Hôpital)', type: 'hospital', color: LEGEND_LINE_COLORS.H, height: 30, buildable: true },
-  R: { label: 'Restaurant', type: 'restaurant', color: LEGEND_LINE_COLORS.R, height: 14, buildable: true },
-  PO: { label: 'Police Station', type: 'police', color: LEGEND_LINE_COLORS.PO, height: 18, buildable: true },
-  PK: { label: 'Parking', type: 'parking', color: LEGEND_LINE_COLORS.PK, height: 6, buildable: true },
-  MA: { label: 'Town Hall (Mairie)', type: 'mairie', color: LEGEND_LINE_COLORS.MA, height: 28, buildable: true },
-  'H★': { label: 'Hotel', type: 'hotel', color: LEGEND_LINE_COLORS['H★'], height: 40, buildable: true },
-  S: { label: 'Stadium (Stade)', type: 'stadium', color: LEGEND_LINE_COLORS.S, height: 12, buildable: false },
-  T: { label: 'Transport/Train', type: 'transport', color: LEGEND_LINE_COLORS.T, height: 16, buildable: true },
-  D: { label: 'Déchetterie', type: 'utilities', color: LEGEND_LINE_COLORS.D, height: 14, buildable: true },
-  Ci: { label: 'Cinema', type: 'cinema', color: LEGEND_LINE_COLORS.Ci, height: 18, buildable: true },
-  ff: { label: 'Fairground', type: 'fairground', color: LEGEND_LINE_COLORS.ff, height: 10, buildable: false },
-  P: { label: 'Port', type: 'port', color: LEGEND_LINE_COLORS.P, height: 14, buildable: true },
-  '⚡': { label: 'Electric Station', type: 'electric', color: LEGEND_LINE_COLORS['⚡'], height: 18, buildable: true },
-  '💧': { label: 'Water Treatment', type: 'water', color: LEGEND_LINE_COLORS['💧'], height: 16, buildable: true }
-};
-
-const ALLOWED_TYPE_CODES = new Set(Object.keys(LEGEND_TYPE_MAP));
 
 function normalizeTypeCode(code) {
   if (!code) return '';
@@ -1122,34 +1121,6 @@ function getEntryHeight(entry) {
   return info.height;
 }
 
-const POI_COLORS = {
-  METRO_STATION: 0x2f7bff,
-  TRAIN_STATION: 0xffffff,
-  HYPERLOOP_NODE: 0x00ffd5,
-  PORT: 0x55a6ff,
-  WIND_TURBINE: 0xaad1ff,
-  ECOLE: 0xffc857,
-  SKYSCRAPER: 0xffcc33,
-  TRAFFIC_LIGHT: 0xff3b3b
-};
-
-const ROAD_LINE_STYLES = {
-  ROAD_MAJOR: { width: 18, color: 0x2b2b2b, outline: 0xffffff, dash: true, yOffset: 0 },
-  ROAD_MINOR: { width: 12, color: 0x333333, outline: 0xffffff, dash: true, yOffset: 0 },
-  PATH: { width: 4, color: 0x777777, outline: 0xcccccc, dash: false, yOffset: 0.08 },
-  FOOTPATH: { width: 4, color: 0x777777, outline: 0xcccccc, dash: false, yOffset: 0.08 }
-};
-
-const TRANSIT_STYLES = {
-  METRO: { color: 0x2f7bff, radius: 2.2 },
-  TRAIN: { color: 0xc0c0c0, radius: 2.6 },
-  HYPERLOOP: { color: 0x00ffd5, radius: 1.8 }
-};
-
-const LINE_TYPES = new Set(['ROAD_MAJOR', 'ROAD_MINOR', 'PATH', 'FOOTPATH', 'METRO', 'TRAIN', 'HYPERLOOP']);
-const TRANSIT_TYPES = new Set(['METRO', 'TRAIN', 'HYPERLOOP']);
-const USE_RIBBON_ROADS = true;
-
 function normalizeLineType(type) {
   const raw = String(type || '').trim().toUpperCase();
   if (raw === 'FOOTPATH') return 'PATH';
@@ -1175,83 +1146,36 @@ function getRoadLineStyle(type) {
   return ROAD_LINE_STYLES[normalized] || ROAD_LINE_STYLES.ROAD_MINOR;
 }
 
-// Cameras
-    const aspect = window.innerWidth / window.innerHeight;
-    const frustumSize = MAP_HEIGHT * 1.1;
-    
-    const orthoCamera = new THREE.OrthographicCamera(
-      -frustumSize * aspect / 2,
-      frustumSize * aspect / 2,
-      frustumSize / 2,
-      -frustumSize / 2,
-      1, 2000
-    );
-    orthoCamera.up.set(0, 0, -1);
-    orthoCamera.position.set(0, 800, 1);
-    orthoCamera.lookAt(0, 0, 0);
-    
-    const perspCamera = new THREE.PerspectiveCamera(60, aspect, 1, 5000);
-    perspCamera.position.set(-600, 400, 600);
-    perspCamera.lookAt(0, 0, 0);
-    
+const blueprintHelpers = {
+  normalizeTypeCode,
+  normalizeLineType,
+  ALLOWED_TYPE_CODES,
+  LINE_TYPES,
+  TRANSIT_TYPES
+};
+const blueprintModel = new BlueprintModel(blueprintHelpers);
+
+function normalizeBlueprintData(data) {
+  return normalizeBlueprint(data, blueprintHelpers);
+}
+
+function validateBlueprint(data) {
+  return validateBlueprintCore(data, blueprintHelpers);
+}
+
     let activeCamera = orthoCamera;
     let viewMode = 'plan';
+    const setActiveCamera = (camera) => {
+      activeCamera = camera;
+      setSceneActiveCamera(camera);
+    };
 
-// Controls
-    const controls = new OrbitControls(perspCamera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.05;
-    controls.maxPolarAngle = Math.PI / 2 - 0.1;
-    controls.minDistance = 100;
-    controls.maxDistance = 2000;
-    controls.enabled = false;
-    
-    // ============================================
-    // LIGHTING
-    // ============================================
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
-    scene.add(ambientLight);
-    
-    const sunLight = new THREE.DirectionalLight(0xffeedd, 1.2);
-    sunLight.position.set(300, 500, 200);
-    sunLight.castShadow = true;
-    sunLight.shadow.mapSize.set(2048, 2048);
-    sunLight.shadow.camera.near = 1;
-    sunLight.shadow.camera.far = 1500;
-    sunLight.shadow.camera.left = -800;
-    sunLight.shadow.camera.right = 800;
-    sunLight.shadow.camera.top = 600;
-    sunLight.shadow.camera.bottom = -600;
-    sunLight.shadow.bias = -0.0001;
-    sunLight.shadow.normalBias = 0.02;
-    scene.add(sunLight);
-    
-    const hemisphereLight = new THREE.HemisphereLight(0x88ccff, 0x44aa44, 0.3);
-    scene.add(hemisphereLight);
-    
     // ============================================
 // HELPER FUNCTIONS
     // ============================================
     
-    // Disposal helper for cleanup
-    function disposeObject3D(root) {
-      root.traverse(o => {
-        if (o.geometry && !o.geometry.userData?.shared) o.geometry.dispose();
-        if (o.material) {
-          if (Array.isArray(o.material)) {
-            o.material.forEach(m => {
-              if (!m?.userData?.shared) m.dispose();
-            });
-          } else if (!o.material.userData?.shared) {
-            o.material.dispose();
-          }
-        }
-      });
-    }
-
-    function clampNumber(value, min, max) {
-      return Math.min(max, Math.max(min, value));
-    }
+    const urlSearchParams = new URLSearchParams(location.search);
+    const probeEnabled = urlSearchParams.has('refactorProbe');
 
     function exposeDebugState() {
       if (window.__CITYSIM__) return;
@@ -1269,38 +1193,69 @@ function getRoadLineStyle(type) {
       };
     }
 
+    function getProbeRefs() {
+      return {
+        renderer,
+        scene,
+        blueprintData,
+        mapCoordMapper,
+        mapOverlayGroup,
+        mapOverlayImgW: mapOverlayImgW,
+        mapOverlayImgH: mapOverlayImgH,
+        overlayPxToWorld,
+        overlayWorldToPx,
+        renderFps: RENDER_FPS,
+        animationEnabled,
+        setViewMode,
+        getViewMode: () => viewMode,
+        snapshotViewMode: () => ({
+          viewMode,
+          overlayVisible: !!mapOverlayMesh?.visible,
+          editorVisible: !!editorGroup?.visible,
+          propsVisible: !!LAYERS?.props?.visible,
+          fxVisible: !!LAYERS?.fx?.visible,
+          blueprintPropsVisible: !!BLUEPRINT_LAYERS?.props?.visible,
+          blueprintFxVisible: !!BLUEPRINT_LAYERS?.fx?.visible
+        }),
+        overlayPreviewGroups: {
+          BlueprintOutlines: blueprintOutlineGroup,
+          BlueprintMeshes: blueprintMeshGroup,
+          BlueprintLabels: blueprintLabelGroup,
+          RoadCenterlines: blueprintCenterlineGroup,
+          RoadOffsetDebug: blueprintOffsetDebugGroup
+        }
+      };
+    }
+
+    if (probeEnabled) {
+      exposeDebugState();
+      import('./tools/refactorProbe.js').then(({ buildRefactorProbeJSON }) => {
+        window.runRefactorProbe = () => {
+          const json = buildRefactorProbeJSON(getProbeRefs());
+          console.log(json);
+          return json;
+        };
+      });
+    }
+
     // Coordinate contract: image (0,0) top-left; world (0,0) center; +X right, +Z down.
     function overlayWorldToPx(x, z) {
-      if (!mapCoordMapper || !mapOverlayGroup) return null;
-      const local = new THREE.Vector3(x, 0, z);
-      mapOverlayGroup.worldToLocal(local);
-      return mapCoordMapper.worldToPx(local.x, local.z);
+      if (!overlayLayer) return null;
+      return overlayLayer.overlayWorldToPx?.(x, z) ?? null;
     }
 
     function overlayPxToWorld(px, py, y = 0) {
-      if (!mapCoordMapper || !mapOverlayGroup) return null;
-      const local = mapCoordMapper.pxToWorld(px, py, y);
-      return mapOverlayGroup.localToWorld(local);
+      if (!overlayLayer) return null;
+      return overlayLayer.overlayPxToWorld?.(px, py, y) ?? null;
     }
 
     function verifyOverlayMapping() {
-      if (!mapCoordMapper || !mapOverlayGroup) return;
-      const epsPx = 0.05;
-      const probes = [
-        { px: MAP_OVERLAY_IMG_W * 0.5, py: MAP_OVERLAY_IMG_H * 0.5 },
-        { px: MAP_OVERLAY_IMG_W * 0.1, py: MAP_OVERLAY_IMG_H * 0.1 },
-        { px: MAP_OVERLAY_IMG_W * 0.9, py: MAP_OVERLAY_IMG_H * 0.9 }
-      ];
-
-      probes.forEach((probe) => {
-        const world = overlayPxToWorld(probe.px, probe.py, 0);
-        if (!world) return;
-        const pxBack = overlayWorldToPx(world.x, world.z);
-        if (!pxBack) return;
-        const dx = Math.abs(pxBack.px - probe.px);
-        const dy = Math.abs(pxBack.py - probe.py);
-        if (dx > epsPx || dy > epsPx) {
-          console.warn('Overlay mapping drift', { probe, back: pxBack, error: { dx, dy } });
+      if (!overlayLayer) return;
+      const drift = overlayLayer.verifyMapping?.();
+      if (!drift) return;
+      drift.samples.forEach((sample, idx) => {
+        if (sample.dx > drift.epsPx || sample.dy > drift.epsPx) {
+          console.warn('Overlay mapping drift', { sampleIndex: idx, sample, epsPx: drift.epsPx });
         }
       });
     }
@@ -1326,6 +1281,11 @@ function getRoadLineStyle(type) {
       if (blueprintOffsetDebugGroup) {
         blueprintOffsetDebugGroup.visible = allowed && editorState.debugRoadOffsets;
       }
+    }
+
+    function applyOverlayCalibKey() {
+      const imageId = getOverlayImageId() || PERSISTENCE_IMAGE_ID;
+      PERSIST_KEYS.overlayCalib = `overlayCalib:${imageId}`;
     }
 
     function syncBlueprintRootToOverlay() {
@@ -1394,301 +1354,12 @@ function getRoadLineStyle(type) {
       updateLineResolution(overlayBounds);
       mapOverlayGroup.add(overlayBounds);
 
-      blueprintOutlineGroup = new THREE.Group();
-      blueprintOutlineGroup.name = 'BlueprintOutlines';
-      mapOverlayGroup.add(blueprintOutlineGroup);
-
-      blueprintMeshGroup = new THREE.Group();
-      blueprintMeshGroup.name = 'BlueprintMeshes';
-      mapOverlayGroup.add(blueprintMeshGroup);
-
-      blueprintLabelGroup = new THREE.Group();
-      blueprintLabelGroup.name = 'BlueprintLabels';
-      mapOverlayGroup.add(blueprintLabelGroup);
-
-      blueprintCenterlineGroup = new THREE.Group();
-      blueprintCenterlineGroup.name = 'RoadCenterlines';
-      mapOverlayGroup.add(blueprintCenterlineGroup);
-
-      blueprintOffsetDebugGroup = new THREE.Group();
-      blueprintOffsetDebugGroup.name = 'RoadOffsetDebug';
-      mapOverlayGroup.add(blueprintOffsetDebugGroup);
-    }
-
-    function normalizeBlueprintData(data) {
-      const normalized = {
-        meta: (data && typeof data.meta === 'object' && data.meta) ? data.meta : {},
-        coastlines: Array.isArray(data?.coastlines) ? data.coastlines : [],
-        beaches: Array.isArray(data?.beaches) ? data.beaches : [],
-        sea: Array.isArray(data?.sea) ? data.sea : [],
-        transit: Array.isArray(data?.transit) ? data.transit : [],
-        roads: Array.isArray(data?.roads) ? data.roads : [],
-        zones: Array.isArray(data?.zones) ? data.zones : [],
-        buildings: Array.isArray(data?.buildings) ? data.buildings : [],
-        pois: Array.isArray(data?.pois) ? data.pois : []
-      };
-      ['coastlines', 'beaches', 'sea', 'transit', 'roads', 'zones', 'buildings'].forEach((key) => {
-        normalized[key].forEach((entry) => {
-          if (!Array.isArray(entry.curves)) entry.curves = [];
-        });
-      });
-      normalized.zones.forEach((entry) => {
-        if (entry && entry.typeCode) entry.typeCode = normalizeTypeCode(entry.typeCode);
-      });
-      normalized.buildings.forEach((entry) => {
-        if (entry && entry.typeCode) entry.typeCode = normalizeTypeCode(entry.typeCode);
-      });
-      normalized.transit.forEach((entry) => {
-        if (entry && entry.type) entry.type = String(entry.type).toUpperCase();
-        if (entry && entry.kind) entry.kind = normalizeLineType(entry.kind);
-      });
-      normalized.roads.forEach((entry) => {
-        if (entry && entry.kind) entry.kind = normalizeLineType(entry.kind);
-        if (entry && entry.type) entry.type = normalizeLineType(entry.type);
-      });
-
-      // Merge legacy transit lines into roads so all line features live in one place.
-      if (normalized.transit.length > 0) {
-        normalized.transit.forEach((entry) => {
-          if (!entry?.polyline) return;
-          normalized.roads.push({
-            ...entry,
-            kind: normalizeLineType(entry.kind ?? entry.type ?? 'METRO')
-          });
-        });
-        normalized.transit = [];
-      }
-
-      normalized.roads.forEach((entry) => {
-        if (!entry) return;
-        if (entry.polyline) {
-          entry.kind = normalizeLineType(entry.kind ?? entry.type ?? 'ROAD_MINOR');
-          entry.type = entry.kind;
-        }
-      });
-
-      return normalized;
-    }
-
-    function validateBlueprint(data) {
-      const errors = [];
-      const warnings = [];
-
-      if (!data || typeof data !== 'object') {
-        errors.push('Blueprint must be an object.');
-        return { ok: false, errors, warnings };
-      }
-
-      ['coastlines', 'roads', 'zones', 'buildings', 'pois'].forEach((key) => {
-        if (!Array.isArray(data[key])) errors.push(`${key} must be an array.`);
-      });
-      ['beaches', 'sea'].forEach((key) => {
-        if (data[key] !== undefined && !Array.isArray(data[key])) {
-          errors.push(`${key} must be an array when provided.`);
-        }
-      });
-      if (data.transit !== undefined && !Array.isArray(data.transit)) {
-        errors.push('transit must be an array when provided.');
-      } else if (Array.isArray(data.transit) && data.transit.length > 0) {
-        warnings.push('transit is legacy; line features should live in roads[].');
-      }
-
-      const isFinitePoint = (pt) => Array.isArray(pt) && pt.length >= 2 &&
-        Number.isFinite(pt[0]) && Number.isFinite(pt[1]);
-
-      const polygonArea = (poly) => {
-        let area = 0;
-        for (let i = 0; i < poly.length; i++) {
-          const a = poly[i];
-          const b = poly[(i + 1) % poly.length];
-          area += (a[0] * b[1]) - (b[0] * a[1]);
-        }
-        return area * 0.5;
-      };
-
-      const validateCurves = (entry, idx, label) => {
-        if (!entry || entry.curves === undefined) return;
-        if (!Array.isArray(entry.curves) || !entry.curves.every(Number.isInteger)) {
-          errors.push(`${label}[${idx}] curves must be an array of indices.`);
-          return;
-        }
-        if (entry.polygon) {
-          entry.curves.forEach((c) => {
-            if (c < 0 || c >= entry.polygon.length) {
-              warnings.push(`${label}[${idx}] curve index ${c} is out of range.`);
-            }
-          });
-        }
-      };
-
-      (data.coastlines || []).forEach((entry, idx) => {
-        const poly = entry?.polygon;
-        if (!Array.isArray(poly) || poly.length < 3) {
-          errors.push(`coastlines[${idx}] polygon must have >= 3 points.`);
-          return;
-        }
-        if (!poly.every(isFinitePoint)) {
-          errors.push(`coastlines[${idx}] polygon has invalid points.`);
-          return;
-        }
-        const area = polygonArea(poly);
-        if (Math.abs(area) < 0.001) {
-          errors.push(`coastlines[${idx}] polygon area is near zero.`);
-        } else if (area < 0) {
-          warnings.push(`coastlines[${idx}] polygon winding is clockwise.`);
-        }
-        validateCurves(entry, idx, 'coastlines');
-      });
-
-      (data.beaches || []).forEach((entry, idx) => {
-        const poly = entry?.polygon;
-        if (!Array.isArray(poly) || poly.length < 3) {
-          errors.push(`beaches[${idx}] polygon must have >= 3 points.`);
-          return;
-        }
-        if (!poly.every(isFinitePoint)) {
-          errors.push(`beaches[${idx}] polygon has invalid points.`);
-          return;
-        }
-        const area = polygonArea(poly);
-        if (Math.abs(area) < 0.001) {
-          errors.push(`beaches[${idx}] polygon area is near zero.`);
-        } else if (area < 0) {
-          warnings.push(`beaches[${idx}] polygon winding is clockwise.`);
-        }
-        validateCurves(entry, idx, 'beaches');
-      });
-
-      (data.sea || []).forEach((entry, idx) => {
-        const poly = entry?.polygon;
-        if (!Array.isArray(poly) || poly.length < 3) {
-          errors.push(`sea[${idx}] polygon must have >= 3 points.`);
-          return;
-        }
-        if (!poly.every(isFinitePoint)) {
-          errors.push(`sea[${idx}] polygon has invalid points.`);
-          return;
-        }
-        const area = polygonArea(poly);
-        if (Math.abs(area) < 0.001) {
-          errors.push(`sea[${idx}] polygon area is near zero.`);
-        } else if (area < 0) {
-          warnings.push(`sea[${idx}] polygon winding is clockwise.`);
-        }
-        validateCurves(entry, idx, 'sea');
-      });
-
-      (data.transit || []).forEach((entry, idx) => {
-        if (!entry?.type && !entry?.kind) {
-          errors.push(`transit[${idx}] type is required.`);
-        }
-        const line = entry?.polyline;
-        if (!Array.isArray(line) || line.length < 2 || !line.every(isFinitePoint)) {
-          errors.push(`transit[${idx}] polyline must have >= 2 valid points.`);
-        }
-        if (entry?.stations) {
-          if (!Array.isArray(entry.stations) || !entry.stations.every(isFinitePoint)) {
-            errors.push(`transit[${idx}] stations must be an array of points.`);
-          }
-        }
-        const kind = normalizeLineType(entry?.kind ?? entry?.type);
-        if (kind && !TRANSIT_TYPES.has(kind)) {
-          warnings.push(`transit[${idx}] type "${entry.type ?? entry.kind}" is unknown.`);
-        }
-      });
-
-      (data.roads || []).forEach((entry, idx) => {
-        if (entry?.polygon) {
-          const poly = entry.polygon;
-          if (!Array.isArray(poly) || poly.length < 3 || !poly.every(isFinitePoint)) {
-            errors.push(`roads[${idx}] polygon must have >= 3 valid points.`);
-            return;
-          }
-          const area = polygonArea(poly);
-          if (Math.abs(area) < 0.001) {
-            errors.push(`roads[${idx}] polygon area is near zero.`);
-          } else if (area < 0) {
-            warnings.push(`roads[${idx}] polygon winding is clockwise.`);
-          }
-          validateCurves(entry, idx, 'roads');
-        } else if (entry?.polyline) {
-          const line = entry.polyline;
-          if (!Array.isArray(line) || line.length < 2 || !line.every(isFinitePoint)) {
-            errors.push(`roads[${idx}] polyline must have >= 2 valid points.`);
-          }
-          if (entry.type && typeof entry.type !== 'string') {
-            errors.push(`roads[${idx}] type must be a string when provided.`);
-          }
-          if (entry.kind && typeof entry.kind !== 'string') {
-            errors.push(`roads[${idx}] kind must be a string when provided.`);
-          }
-          if (entry.width !== undefined && !Number.isFinite(entry.width)) {
-            errors.push(`roads[${idx}] width must be a number when provided.`);
-          }
-          const kind = normalizeLineType(entry.kind ?? entry.type);
-          if (kind && !LINE_TYPES.has(kind)) {
-            warnings.push(`roads[${idx}] kind "${entry.kind ?? entry.type}" is unknown.`);
-          }
-        } else {
-          errors.push(`roads[${idx}] must define polygon or polyline.`);
-        }
-      });
-
-      (data.zones || []).forEach((entry, idx) => {
-        if (!entry?.typeCode || typeof entry.typeCode !== 'string') {
-          errors.push(`zones[${idx}] typeCode is required.`);
-        }
-        const normalized = normalizeTypeCode(entry?.typeCode);
-        if (normalized && !ALLOWED_TYPE_CODES.has(normalized)) {
-          warnings.push(`zones[${idx}] typeCode "${entry.typeCode}" is unknown.`);
-        }
-        const poly = entry?.polygon;
-        if (!Array.isArray(poly) || poly.length < 3 || !poly.every(isFinitePoint)) {
-          errors.push(`zones[${idx}] polygon must have >= 3 valid points.`);
-          return;
-        }
-        const area = polygonArea(poly);
-        if (Math.abs(area) < 0.001) {
-          errors.push(`zones[${idx}] polygon area is near zero.`);
-        } else if (area < 0) {
-          warnings.push(`zones[${idx}] polygon winding is clockwise.`);
-        }
-        validateCurves(entry, idx, 'zones');
-      });
-
-      (data.buildings || []).forEach((entry, idx) => {
-        if (!entry?.typeCode || typeof entry.typeCode !== 'string') {
-          errors.push(`buildings[${idx}] typeCode is required.`);
-        }
-        const normalized = normalizeTypeCode(entry?.typeCode);
-        if (normalized && !ALLOWED_TYPE_CODES.has(normalized)) {
-          warnings.push(`buildings[${idx}] typeCode "${entry.typeCode}" is unknown.`);
-        }
-        const poly = entry?.polygon;
-        if (!Array.isArray(poly) || poly.length < 3 || !poly.every(isFinitePoint)) {
-          errors.push(`buildings[${idx}] polygon must have >= 3 valid points.`);
-          return;
-        }
-        const area = polygonArea(poly);
-        if (Math.abs(area) < 0.001) {
-          errors.push(`buildings[${idx}] polygon area is near zero.`);
-        } else if (area < 0) {
-          warnings.push(`buildings[${idx}] polygon winding is clockwise.`);
-        }
-        validateCurves(entry, idx, 'buildings');
-      });
-
-      (data.pois || []).forEach((entry, idx) => {
-        if (!entry?.type || typeof entry.type !== 'string') {
-          errors.push(`pois[${idx}] type is required.`);
-        }
-        if (!entry?.position || !isFinitePoint(entry.position)) {
-          errors.push(`pois[${idx}] position must be [x, z].`);
-        }
-      });
-
-      if (errors.length === 0 && warnings.length === 0) warnings.push('OK');
-      return { ok: errors.length === 0, errors, warnings };
+      blueprintPreviewGroups = createBlueprintPreviewGroups({ THREE, mapOverlayGroup });
+      blueprintOutlineGroup = blueprintPreviewGroups.outline;
+      blueprintMeshGroup = blueprintPreviewGroups.meshes;
+      blueprintLabelGroup = blueprintPreviewGroups.labels;
+      blueprintCenterlineGroup = blueprintPreviewGroups.centerlines;
+      blueprintOffsetDebugGroup = blueprintPreviewGroups.offsetDebug;
     }
 
     function setBlueprintStatus(text, ok = true) {
@@ -1703,13 +1374,14 @@ function getRoadLineStyle(type) {
         const res = await fetch('./src/mapBlueprint.json');
         if (!res.ok) throw new Error(`Failed to load blueprint: ${res.status}`);
         const raw = await res.json();
-        const validation = validateBlueprint(raw);
+        const validation = blueprintModel.validate(raw);
         if (!validation.ok) {
           console.warn('Blueprint validation failed:', validation.errors);
           setBlueprintStatus(`Blueprint invalid: ${validation.errors[0]}`, false);
           return;
         }
-        blueprintData = normalizeBlueprintData(raw);
+        blueprintModel.loadFromJSON(raw);
+        blueprintData = blueprintModel.getData();
         buildBlueprintFromData(blueprintData);
         rebuildBlueprintCity();
         setBlueprintStatus('Blueprint status: loaded from file.');
@@ -1720,272 +1392,35 @@ function getRoadLineStyle(type) {
     }
 
     function buildBlueprintFromData(data) {
-      if (!data) return;
-      if (!blueprintOutlineGroup || !blueprintMeshGroup) return;
-      resetGroup(blueprintOutlineGroup);
-      resetGroup(blueprintMeshGroup);
-      if (blueprintLabelGroup) resetGroup(blueprintLabelGroup);
-      if (blueprintCenterlineGroup) resetGroup(blueprintCenterlineGroup);
-      if (blueprintOffsetDebugGroup) resetGroup(blueprintOffsetDebugGroup);
-
-      const lineOpacity = blueprintPreviewSettings.opacity;
-      const baseOutlineMat = new THREE.LineBasicMaterial({ color: 0x00f0ff, transparent: true, opacity: lineOpacity });
-      baseOutlineMat.depthTest = false;
-      const landFillMat = new THREE.MeshBasicMaterial({
-        color: COLORS.land,
-        transparent: true,
-        opacity: 0.18 * blueprintPreviewSettings.opacity,
-        depthWrite: false,
-        depthTest: false,
-        side: THREE.DoubleSide
+      buildBlueprintPreview({
+        THREE,
+        data,
+        groups: blueprintPreviewGroups || {
+          outline: blueprintOutlineGroup,
+          meshes: blueprintMeshGroup,
+          labels: blueprintLabelGroup,
+          centerlines: blueprintCenterlineGroup,
+          offsetDebug: blueprintOffsetDebugGroup
+        },
+        Y,
+        COLORS,
+        POI_COLORS,
+        LEGEND_LINE_COLORS,
+        TRANSIT_STYLES,
+        blueprintPreviewSettings,
+        editorState,
+        ROAD_JOIN_SETTINGS,
+        getRenderPolygonPoints,
+        getRenderPolylinePoints,
+        getLineKind,
+        getRoadLineStyle,
+        isTransitKind,
+        computeOffsetRails,
+        normalizeTypeCode,
+        centroidNorm,
+        updateDebugVisibility,
+        resetGroup
       });
-      const beachFillMat = new THREE.MeshBasicMaterial({
-        color: COLORS.beach,
-        transparent: true,
-        opacity: 0.18 * blueprintPreviewSettings.opacity,
-        depthWrite: false,
-        depthTest: false,
-        side: THREE.DoubleSide
-      });
-      const seaFillMat = new THREE.MeshBasicMaterial({
-        color: COLORS.sea,
-        transparent: true,
-        opacity: 0.16 * blueprintPreviewSettings.opacity,
-        depthWrite: false,
-        depthTest: false,
-        side: THREE.DoubleSide
-      });
-      const roadFillMat = new THREE.MeshBasicMaterial({
-        color: 0x222222,
-        transparent: true,
-        opacity: 0.22 * blueprintPreviewSettings.opacity,
-        depthWrite: false,
-        depthTest: false,
-        side: THREE.DoubleSide
-      });
-
-      const makeShapeMesh = (points, material, y) => {
-        if (!points || points.length < 3) return null;
-        const shape = new THREE.Shape(points.map(p => new THREE.Vector2(p[0], p[1])));
-        const geometry = new THREE.ShapeGeometry(shape);
-        geometry.rotateX(Math.PI / 2);
-        const mesh = new THREE.Mesh(geometry, material);
-        mesh.position.y = y;
-        mesh.renderOrder = 997;
-        return mesh;
-      };
-
-      const makeOutline = (points, color, y) => {
-        if (!points || points.length < 2) return null;
-        const pts = points.map(p => new THREE.Vector3(p[0], y, p[1]));
-        const geometry = new THREE.BufferGeometry().setFromPoints(pts);
-        const mat = baseOutlineMat.clone();
-        mat.color.setHex(color);
-        const line = new THREE.LineLoop(geometry, mat);
-        line.renderOrder = 999;
-        return line;
-      };
-
-      (data.coastlines || []).forEach(entry => {
-        const points = getRenderPolygonPoints(entry);
-        const fillBase = Y.overlay + 0.02;
-        const mesh = makeShapeMesh(points, landFillMat, fillBase);
-        if (mesh) blueprintMeshGroup.add(mesh);
-        const outline = makeOutline(points, 0x00f0ff, Y.overlay + 0.05);
-        if (outline) blueprintOutlineGroup.add(outline);
-      });
-
-      (data.beaches || []).forEach(entry => {
-        const points = getRenderPolygonPoints(entry);
-        const mesh = makeShapeMesh(points, beachFillMat, Y.overlay + 0.019);
-        if (mesh) blueprintMeshGroup.add(mesh);
-        const outline = makeOutline(points, 0xffd27a, Y.overlay + 0.048);
-        if (outline) blueprintOutlineGroup.add(outline);
-      });
-
-      (data.sea || []).forEach(entry => {
-        const points = getRenderPolygonPoints(entry);
-        const mesh = makeShapeMesh(points, seaFillMat, Y.overlay + 0.018);
-        if (mesh) blueprintMeshGroup.add(mesh);
-        const outline = makeOutline(points, 0x3aa6ff, Y.overlay + 0.047);
-        if (outline) blueprintOutlineGroup.add(outline);
-      });
-
-      (data.roads || []).forEach(entry => {
-        if (entry.polygon) {
-          const points = getRenderPolygonPoints(entry);
-          const fillBase = Y.overlay + 0.022;
-          const mesh = makeShapeMesh(points, roadFillMat, fillBase);
-          if (mesh) blueprintMeshGroup.add(mesh);
-          const outline = makeOutline(points, 0xffffff, Y.overlay + 0.055);
-          if (outline) blueprintOutlineGroup.add(outline);
-          return;
-        }
-        const renderPoints = getRenderPolylinePoints(entry);
-        if (!renderPoints || renderPoints.length < 2) return;
-        const kind = getLineKind(entry);
-        const style = getRoadLineStyle(kind);
-        const width = Number.isFinite(entry.width) ? entry.width : style.width;
-        if (editorState.debugRoadOffsets && !isTransitKind(kind) && blueprintOffsetDebugGroup) {
-          const rails = computeOffsetRails(renderPoints, width / 2, {
-            roundSegments: ROAD_JOIN_SETTINGS.roundSegments,
-            minAngle: ROAD_JOIN_SETTINGS.minAngle,
-            maxAngle: ROAD_JOIN_SETTINGS.maxAngle
-          });
-          const leftPts = rails.left.map(p => new THREE.Vector3(p[0], Y.overlay + 0.09, p[1]));
-          const rightPts = rails.right.map(p => new THREE.Vector3(p[0], Y.overlay + 0.09, p[1]));
-          const leftGeom = new THREE.BufferGeometry().setFromPoints(leftPts);
-          const rightGeom = new THREE.BufferGeometry().setFromPoints(rightPts);
-          const leftMat = new THREE.LineBasicMaterial({ color: 0x44ff88, transparent: true, opacity: 0.9 });
-          const rightMat = new THREE.LineBasicMaterial({ color: 0xff4dd2, transparent: true, opacity: 0.9 });
-          const leftLine = new THREE.Line(leftGeom, leftMat);
-          const rightLine = new THREE.Line(rightGeom, rightMat);
-          leftLine.renderOrder = 1002;
-          rightLine.renderOrder = 1002;
-          blueprintOffsetDebugGroup.add(leftLine);
-          blueprintOffsetDebugGroup.add(rightLine);
-
-          const modeColor = (mode) => {
-            if (mode === 'ROUND') return 0x55ff55;
-            if (mode === 'STRAIGHT') return 0x66bbff;
-            if (mode === 'SPLIT') return 0xff5a5a;
-            if (mode === 'CAP') return 0xffd65a;
-            return 0xffffff;
-          };
-          const dotGeo = new THREE.SphereGeometry(2.6, 10, 10);
-          rails.center.forEach((pt, idx) => {
-            const join = rails.joins[idx] || {};
-            const color = modeColor(join.mode);
-            const dot = new THREE.Mesh(dotGeo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.95, depthTest: false }));
-            dot.position.set(pt[0], Y.overlay + 0.095, pt[1]);
-            dot.renderOrder = 1004;
-            blueprintOffsetDebugGroup.add(dot);
-          });
-        }
-        const pts = renderPoints.map(p => new THREE.Vector3(p[0], Y.overlay + 0.055, p[1]));
-        const geometry = new THREE.BufferGeometry().setFromPoints(pts);
-        let mat = null;
-        if (isTransitKind(kind)) {
-          const style = TRANSIT_STYLES[kind] || TRANSIT_STYLES.METRO;
-          mat = new THREE.LineBasicMaterial({ color: style.color });
-        } else {
-          mat = new THREE.LineBasicMaterial({ color: style.outline, transparent: true, opacity: lineOpacity });
-        }
-        mat.depthTest = false;
-        const line = new THREE.Line(geometry, mat);
-        line.renderOrder = 999;
-        blueprintOutlineGroup.add(line);
-
-        if (kind === 'METRO') {
-          const stations = Array.isArray(entry.stations)
-            ? entry.stations
-            : (data.pois || [])
-              .filter(poi => poi.type === 'METRO_STATION')
-              .map(poi => poi.position);
-          const stationGeo = new THREE.SphereGeometry(3, 10, 10);
-          stations.forEach((pos) => {
-            if (!pos || pos.length < 2) return;
-            const station = new THREE.Mesh(stationGeo, new THREE.MeshBasicMaterial({ color: TRANSIT_STYLES.METRO.color }));
-            station.position.set(pos[0], Y.overlay + 0.06, pos[1]);
-            blueprintOutlineGroup.add(station);
-          });
-        }
-      });
-
-      (data.buildings || []).forEach(entry => {
-        const points = getRenderPolygonPoints(entry);
-        const code = normalizeTypeCode(entry.typeCode);
-        const color = LEGEND_LINE_COLORS[code] ?? 0xffffff;
-        const zoneMat = new THREE.MeshBasicMaterial({
-          color,
-          transparent: true,
-          opacity: 0.14 * blueprintPreviewSettings.opacity,
-          depthWrite: false,
-          depthTest: false,
-          side: THREE.DoubleSide
-        });
-        const mesh = makeShapeMesh(points, zoneMat, Y.overlay + 0.024);
-        if (mesh) blueprintMeshGroup.add(mesh);
-        const outline = makeOutline(points, color, Y.overlay + 0.065);
-        if (outline) blueprintOutlineGroup.add(outline);
-      });
-
-      (data.zones || []).forEach(entry => {
-        const points = getRenderPolygonPoints(entry);
-        const code = normalizeTypeCode(entry.typeCode);
-        const color = LEGEND_LINE_COLORS[code] ?? 0xffffff;
-        const zoneMat = new THREE.MeshBasicMaterial({
-          color,
-          transparent: true,
-          opacity: 0.18 * blueprintPreviewSettings.opacity,
-          depthWrite: false,
-          depthTest: false,
-          side: THREE.DoubleSide
-        });
-        const mesh = makeShapeMesh(points, zoneMat, Y.overlay + 0.023);
-        if (mesh) blueprintMeshGroup.add(mesh);
-        const outline = makeOutline(points, color, Y.overlay + 0.06);
-        if (outline) blueprintOutlineGroup.add(outline);
-      });
-
-      const poiGeo = new THREE.SphereGeometry(4, 10, 10);
-      (data.pois || []).forEach(entry => {
-        if (!entry.position || entry.position.length < 2) return;
-        const color = POI_COLORS[entry.type] ?? 0x00ff88;
-        const marker = new THREE.Mesh(poiGeo, new THREE.MeshBasicMaterial({ color }));
-        marker.position.set(entry.position[0], Y.overlay + 0.08, entry.position[1]);
-        blueprintMeshGroup.add(marker);
-      });
-
-      if (blueprintPreviewSettings.showLabels) {
-        addBlueprintLabels(data);
-      }
-
-      updateDebugVisibility();
-    }
-
-    function createLabelSprite(text) {
-      const canvas = document.createElement('canvas');
-      const size = 192;
-      canvas.width = size;
-      canvas.height = size;
-      const ctx = canvas.getContext('2d');
-      ctx.clearRect(0, 0, size, size);
-      ctx.fillStyle = 'rgba(12, 16, 30, 0.8)';
-      ctx.beginPath();
-      ctx.arc(size / 2, size / 2, size * 0.38, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = '#64c8ff';
-      ctx.lineWidth = 4;
-      ctx.stroke();
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 104px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(text, size / 2, size / 2 + 2);
-
-      const texture = new THREE.CanvasTexture(canvas);
-      texture.colorSpace = THREE.SRGBColorSpace;
-      const material = new THREE.SpriteMaterial({ map: texture, transparent: true, opacity: 0.95, depthTest: false });
-      const sprite = new THREE.Sprite(material);
-      sprite.scale.set(46, 46, 1);
-      sprite.renderOrder = 1000;
-      return sprite;
-    }
-
-    function addBlueprintLabels(data) {
-      if (!blueprintLabelGroup) return;
-      const addLabel = (entry, yOffset) => {
-        if (!entry?.polygon || !entry.typeCode) return;
-        const code = normalizeTypeCode(entry.typeCode);
-        // centroidNorm works for any polygon coordinate space.
-        const centroid = centroidNorm(entry.polygon);
-        const sprite = createLabelSprite(code);
-        sprite.position.set(centroid[0], Y.overlay + yOffset, centroid[1]);
-        blueprintLabelGroup.add(sprite);
-      };
-
-      (data.buildings || []).forEach(entry => addLabel(entry, 0.095));
     }
 
     function clearBlueprintCity() {
@@ -2285,6 +1720,89 @@ function getRoadLineStyle(type) {
       }
       setCityLayerVisibility();
     }
+
+    async function ensureExampleCityBuilt(options = {}) {
+      return ensureExampleCity({
+        state: exampleCityEntryState,
+        runLegacyBuild: () =>
+          buildLegacyCity({
+            buildPhase1,
+            buildPhase2,
+            delayMs: options.delayMs ?? 100,
+            onPhase1Done: options.onPhase1Done,
+            onPhase2Done: options.onPhase2Done
+          })
+      });
+    }
+
+    async function applyCityModeBlueprint() {
+      if (!blueprintData) {
+        await loadBlueprintData();
+      }
+      setBlueprintCityEnabled(true);
+      setBlueprintStatus('Blueprint status: blueprint mode.');
+    }
+
+    async function applyCityModeBlank() {
+      blueprintModel.createBlank();
+      blueprintData = blueprintModel.getData();
+      buildBlueprintFromData(blueprintData);
+      setBlueprintCityEnabled(true);
+      setBlueprintStatus('Blueprint status: blank city.');
+    }
+
+    async function applyCityModeExample() {
+      await ensureExampleCityBuilt();
+      setBlueprintCityEnabled(false);
+      setBlueprintStatus('Blueprint status: example city mode.');
+    }
+
+    function ensureCityModeController() {
+      if (!cityModeController) {
+        cityModeController = createCityModeController({
+          defaultMode: 'example',
+          actions: {
+            applyBlueprintMode: applyCityModeBlueprint,
+            applyBlankMode: applyCityModeBlank,
+            applyExampleMode: applyCityModeExample
+          }
+        });
+      }
+      return cityModeController;
+    }
+
+    function ensureScannerController() {
+      if (!scannerController) {
+        scannerController = createScannerController({
+          getOverlayImage: () => ({
+            imageId: getOverlayImageId(),
+            dataUrl: getOverlayImageDataURL(),
+            meta: getOverlayImageMeta()
+          }),
+          getLegendRules: () => SCANNER_LEGEND_RULES,
+          createBlankBlueprint: (_options = {}) => {
+            blueprintModel.createBlank();
+            return blueprintModel.getData();
+          },
+          buildDraftBlueprint,
+          validateDraft: (draft, _ctx) => blueprintModel.validate(draft),
+          normalizeDraft: (draft, _ctx) => {
+            blueprintModel.loadFromJSON(draft);
+            return blueprintModel.getData();
+          },
+          applyBlueprintData: async (draft, ctx) => {
+            blueprintData = draft;
+            buildBlueprintFromData(blueprintData);
+            setBlueprintCityEnabled(true);
+            cityModeState.mode = 'blueprint';
+            setBlueprintStatus('Blueprint status: scanner placeholder draft loaded.');
+            syncTrafficPanel();
+            return { ok: true };
+          }
+        });
+      }
+      return scannerController;
+    }
     
     // Rebuild a single zone (for editing)
     function rebuildZone(name) {
@@ -2335,39 +1853,6 @@ function getRoadLineStyle(type) {
     // Convert normalized [0,1] coordinates to world coordinates
     function toWorld(nx, nz) {
       return [(nx - 0.5) * MAP_WIDTH, (0.5 - nz) * MAP_HEIGHT];
-    }
-    
-    // Simple point-in-polygon for normalized coords
-    function pointInPolygon(px, pz, poly) {
-      let inside = false;
-      for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-        const xi = poly[i][0], zi = poly[i][1];
-        const xj = poly[j][0], zj = poly[j][1];
-        const intersect = ((zi > pz) !== (zj > pz)) &&
-          (px < (xj - xi) * (pz - zi) / (zj - zi + 1e-9) + xi);
-        if (intersect) inside = !inside;
-      }
-      return inside;
-    }
-    
-    // Polygon centroid in normalized coordinates
-    function centroidNorm(points) {
-      let a = 0, cx = 0, cz = 0;
-      for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
-        const [x0, z0] = points[j];
-        const [x1, z1] = points[i];
-        const f = x0 * z1 - x1 * z0;
-        a += f;
-        cx += (x0 + x1) * f;
-        cz += (z0 + z1) * f;
-      }
-      a *= 0.5;
-      if (Math.abs(a) < 1e-9) {
-        let sx = 0, sz = 0;
-        for (const [x, z] of points) { sx += x; sz += z; }
-        return [sx / points.length, sz / points.length];
-      }
-      return [cx / (6 * a), cz / (6 * a)];
     }
     
     function worldCentroid(points) {
@@ -4006,49 +3491,30 @@ function getRoadLineStyle(type) {
     // ============================================
     
     function buildPhase1() {
-      // Sea
-      const sea = createPolygon(seaPoints, COLORS.sea, -2);
-      sea.name = 'sea';
-      LAYERS.terrain.add(sea);
+      const terrainDefs = buildLegacyTerrainDefs({
+        seaPoints,
+        beachPoints,
+        islandOutline,
+        colors: COLORS
+      });
+      createLegacyTerrain({ layer: LAYERS.terrain, createPolygon, defs: terrainDefs });
       
-      // Beach
-      const beach = createPolygon(beachPoints, COLORS.beach, -1);
-      beach.name = 'beach';
-      LAYERS.terrain.add(beach);
-      
-      // Mainland base
-      const mainlandPoints = [
-        [0.36, 0], [1, 0], [1, 1], [0.32, 1],
-        [0.30, 0.85], [0.32, 0.70], [0.36, 0.55],
-        [0.38, 0.42], [0.40, 0.30], [0.38, 0.15]
-      ];
-      const mainland = createPolygon(mainlandPoints, COLORS.land, 0);
-      mainland.name = 'mainland';
-      LAYERS.terrain.add(mainland);
-      
-      // Island base
-      const island = createPolygon(islandOutline, 0xb8a888, 0.5);
-      island.name = 'island';
-      LAYERS.terrain.add(island);
-      
-      // Island zones
-      Object.entries(islandZones).forEach(([key, zone]) => {
-        const mesh = createPolygon(zone.points, zone.color, Y.zones);
-        mesh.name = key;
-        mesh.userData = { ...zone };
-        LAYERS.zones.add(mesh);
-        zones.push(mesh);
-        ZONE_REGISTRY[key] = { zoneMesh: mesh, buildingGroup: null, props: [] };
+      createZoneMeshes({
+        layer: LAYERS.zones,
+        zoneDefs: islandZones,
+        zones,
+        registry: ZONE_REGISTRY,
+        createPolygon,
+        y: Y.zones
       });
       
-      // Mainland zones
-      Object.entries(mainlandZones).forEach(([key, zone]) => {
-        const mesh = createPolygon(zone.points, zone.color, Y.zones);
-        mesh.name = key;
-        mesh.userData = { ...zone };
-        LAYERS.zones.add(mesh);
-        zones.push(mesh);
-        ZONE_REGISTRY[key] = { zoneMesh: mesh, buildingGroup: null, props: [] };
+      createZoneMeshes({
+        layer: LAYERS.zones,
+        zoneDefs: mainlandZones,
+        zones,
+        registry: ZONE_REGISTRY,
+        createPolygon,
+        y: Y.zones
       });
       
       // Bridge
@@ -4085,30 +3551,15 @@ function getRoadLineStyle(type) {
       };
       
       const zoneByName = Object.fromEntries(zones.map(z => [z.name, z]));
-      
-      zones.forEach(zoneMesh => {
-        const data = zoneMesh.userData;
-        // Skip zones that don't need buildings or have custom implementations
-        if (!data.type || data.type === 'garden' || data.type === 'port' || data.type === 'stadium' || data.type === 'skyscraper') return;
-        
-        // Use height from zone data if available, otherwise use type default
-        let height = data.height !== undefined ? data.height : (heights[data.type] || 20);
-        
-        // Skip if height is 0 or very small
-        if (height < 5) return;
-        
-        // Create building group with attached windows
-        const buildingGroup = createBuildingWithWindows(data.points, data.color, height, data.type);
-        buildingGroup.name = zoneMesh.name + '_building';
-        buildingGroup.userData = data;
-        buildingGroup.position.y = Y.buildings;
-        LAYERS.buildings.add(buildingGroup);
-        buildings.push(buildingGroup);
-        buildingGroups.push(buildingGroup);
-        
-        // Update registry
-        const entry = ZONE_REGISTRY[zoneMesh.name];
-        if (entry) entry.buildingGroup = buildingGroup;
+      const buildingDefs = buildLegacyBuildingDefs({ zones, heights });
+      createLegacyBuildings({
+        layer: LAYERS.buildings,
+        defs: buildingDefs,
+        createBuildingWithWindows,
+        buildings,
+        buildingGroups,
+        registry: ZONE_REGISTRY,
+        Y
       });
       
       // Special buildings driven by zone centroids when available
@@ -4137,7 +3588,7 @@ function getRoadLineStyle(type) {
         const [ffX, ffZ] = worldCentroid(zoneByName.colFf.userData.points);
         const ferrisWheel = createFerrisWheel(ffX, ffZ);
         ferrisWheel.name = 'ferrisWheel';
-        LAYERS.props.add(ferrisWheel);
+        addProp(LAYERS.props, ferrisWheel);
         ferrisWheelRef = ferrisWheel;  // Cache reference
       }
       
@@ -4251,7 +3702,7 @@ function getRoadLineStyle(type) {
       rail2.position.set(bridgeCenterX, 8, bridgeCenterZ + 8);
       bridgeGroup.add(rail1, rail2);
       
-      LAYERS.props.add(bridgeGroup);
+      addProp(LAYERS.props, bridgeGroup);
     }
     
     function createHospitalCrossAt(cx, cz) {
@@ -4273,7 +3724,7 @@ function getRoadLineStyle(type) {
       const crossGroup = new THREE.Group();
       crossGroup.add(arm1, arm2);
       crossGroup.position.set(cx, 42, cz);
-      LAYERS.props.add(crossGroup);
+      addProp(LAYERS.props, crossGroup);
     }
     
     function createStadiumDetailsAt(cx, cz) {
@@ -4286,7 +3737,7 @@ function getRoadLineStyle(type) {
       const field = new THREE.Mesh(fieldGeo, fieldMat);
       field.position.set(cx, 2, cz);
       field.receiveShadow = true;
-      LAYERS.props.add(field);
+      addProp(LAYERS.props, field);
       
       // Track (ring around field)
       const trackShape = new THREE.Shape();
@@ -4299,7 +3750,7 @@ function getRoadLineStyle(type) {
       const trackMat = new THREE.MeshStandardMaterial({ color: 0xc87848 });
       const track = new THREE.Mesh(trackGeo, trackMat);
       track.position.set(cx, 2.1, cz);
-      LAYERS.props.add(track);
+      addProp(LAYERS.props, track);
       
       // Seating sections (colored stands)
       const seatColors = [0x3366cc, 0xcc3333, 0x33cc33, 0xcccc33];
@@ -4325,7 +3776,7 @@ function getRoadLineStyle(type) {
         const seat = new THREE.Mesh(seatGeo, seatMat);
         seat.position.set(cx, 2, cz);
         seat.castShadow = false;  // Decorative - no shadow
-        LAYERS.props.add(seat);
+        addProp(LAYERS.props, seat);
       }
     }
     
@@ -4355,7 +3806,7 @@ function getRoadLineStyle(type) {
         windmillGroup.add(windmill);
       });
       
-      LAYERS.props.add(windmillGroup);
+      addProp(LAYERS.props, windmillGroup);
     }
     
     function createWindmill() {
@@ -4409,7 +3860,7 @@ function getRoadLineStyle(type) {
         const [x, z] = toWorld(pos[0], pos[1]);
         const metro = createMetroEntrance();
         metro.position.set(x, 1, z);
-        LAYERS.props.add(metro);
+        addProp(LAYERS.props, metro);
       });
     }
     
@@ -4495,7 +3946,7 @@ function getRoadLineStyle(type) {
           const tree = createTree();
           tree.position.set(x, 1, z);
           tree.scale.setScalar(0.4 + rng() * 0.4);
-          LAYERS.props.add(tree);
+          addProp(LAYERS.props, tree);
         }
       });
     }
@@ -4639,224 +4090,43 @@ function getRoadLineStyle(type) {
     
     // Create roads between zones
     function createRoads() {
-      const roadMat = new THREE.MeshStandardMaterial({ 
-        color: 0x404040,
-        roughness: 0.9
+      const roadDefs = buildLegacyRoadDefs({ toWorld });
+      createLegacyRoads({
+        layer: LAYERS.roads,
+        defs: roadDefs,
+        Y,
+        THREE,
+        tmpObj: _tmpObj,
+        createCars
       });
-      
-      const sidewalkMat = new THREE.MeshStandardMaterial({ 
-        color: 0x707070,
-        roughness: 0.8
-      });
-      
-      // Roads placed in gaps between zone boundaries (streets on map)
-      // Horizontal roads at zone boundaries
-      const hRoadPositions = [0.06, 0.12, 0.22, 0.32, 0.44, 0.56, 0.70, 0.76, 0.92];
-      // Vertical roads at zone boundaries  
-      const vRoadPositions = [0.44, 0.50, 0.56, 0.62, 0.66, 0.72, 0.78, 0.82, 0.90];
-      
-      // Shared dash geometry and material (reused for all roads)
-      const dashGeo = new THREE.BoxGeometry(15, 0.1, 0.5);
-      const dashMat = new THREE.MeshStandardMaterial({ color: 0xdddd44 });
-      
-      // Create road segments that fill spaces between buildings
-      hRoadPositions.forEach(nz => {
-        const [, z] = toWorld(0.5, nz);
-        // Create road from coast to east edge
-        const [x1] = toWorld(0.40, 0);
-        const [x2] = toWorld(0.98, 0);
-        
-        // Road surface
-        const roadGeo = new THREE.BoxGeometry(x2 - x1, 0.3, 12);
-        const road = new THREE.Mesh(roadGeo, roadMat);
-        road.position.set((x1 + x2) / 2, Y.roads, z);
-        road.receiveShadow = true;
-        road.material.polygonOffset = true;
-        road.material.polygonOffsetFactor = -1;
-        road.material.polygonOffsetUnits = -1;
-        LAYERS.roads.add(road);
-        
-        // ✅ Instanced dashes: 1 draw call instead of 20+
-        const dashCount = 20;
-        const dashes = new THREE.InstancedMesh(dashGeo, dashMat, dashCount);
-        for (let i = 0; i < dashCount; i++) {
-          _tmpObj.position.set(x1 + 30 + i * 30, 1.05, z);
-          _tmpObj.rotation.set(0, 0, 0);
-          _tmpObj.updateMatrix();
-          dashes.setMatrixAt(i, _tmpObj.matrix);
-        }
-        dashes.instanceMatrix.needsUpdate = true;
-        dashes.castShadow = false;
-        dashes.receiveShadow = false;
-        LAYERS.roads.add(dashes);
-      });
-      
-      vRoadPositions.forEach(nx => {
-        const [x] = toWorld(nx, 0);
-        const [, z1] = toWorld(0, 0.02);
-        const [, z2] = toWorld(0, 0.96);
-        
-        // Road surface
-        const roadGeo = new THREE.BoxGeometry(12, 0.3, Math.abs(z2 - z1));
-        const road = new THREE.Mesh(roadGeo, roadMat);
-        road.position.set(x, Y.roads, (z1 + z2) / 2);
-        road.receiveShadow = true;
-        road.material.polygonOffset = true;
-        road.material.polygonOffsetFactor = -1;
-        road.material.polygonOffsetUnits = -1;
-        LAYERS.roads.add(road);
-      });
-      
-      // Add some cars
-      createCars();
     }
     
     // Cars with headlights that drive on roads
-    const cars = [];
     const warningLights = [];
     const marqueeLights = [];
-    const CAR_ASSETS = {
-      bodyGeo: null,
-      roofGeo: null,
-      wheelGeo: null,
-      headlightGeo: null,
-      wheelMat: null,
-      headlightMat: null,
-      tailMat: null,
-      bodyMats: new Map()
-    };
-
-    function getSharedCarAssets() {
-      if (!CAR_ASSETS.bodyGeo) {
-        CAR_ASSETS.bodyGeo = new THREE.BoxGeometry(8, 3, 4);
-        CAR_ASSETS.bodyGeo.userData.shared = true;
-        CAR_ASSETS.roofGeo = new THREE.BoxGeometry(4, 2, 3.5);
-        CAR_ASSETS.roofGeo.userData.shared = true;
-        CAR_ASSETS.wheelGeo = new THREE.CylinderGeometry(1, 1, 0.5, 12);
-        CAR_ASSETS.wheelGeo.userData.shared = true;
-        CAR_ASSETS.headlightGeo = new THREE.SphereGeometry(0.4, 8, 8);
-        CAR_ASSETS.headlightGeo.userData.shared = true;
-        CAR_ASSETS.wheelMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
-        CAR_ASSETS.wheelMat.userData.shared = true;
-        CAR_ASSETS.headlightMat = new THREE.MeshStandardMaterial({
-          color: 0xffffcc,
-          emissive: 0xffffcc,
-          emissiveIntensity: 0.5
+    function ensureTrafficSystem() {
+      if (!trafficSystem) {
+        trafficSystem = createTrafficSystem({
+          THREE,
+          addProp,
+          propsLayer: LAYERS.props,
+          toWorld,
+          headlights
         });
-        CAR_ASSETS.headlightMat.userData.shared = true;
-        CAR_ASSETS.tailMat = new THREE.MeshStandardMaterial({
-          color: 0xff0000,
-          emissive: 0xff0000,
-          emissiveIntensity: 0.3
-        });
-        CAR_ASSETS.tailMat.userData.shared = true;
       }
-      return CAR_ASSETS;
-    }
-
-    function getCarBodyMaterial(color) {
-      const assets = getSharedCarAssets();
-      if (assets.bodyMats.has(color)) return assets.bodyMats.get(color);
-      const mat = new THREE.MeshStandardMaterial({
-        color,
-        metalness: 0.6,
-        roughness: 0.4
-      });
-      mat.userData.shared = true;
-      assets.bodyMats.set(color, mat);
-      return mat;
+      return trafficSystem;
     }
     
     function createCars() {
-      // Create several cars on different roads
-      const carSpecs = [
-        { nx: 0.45, nz: 0.22, dir: 1, speed: 0.3, color: 0xff3333 },
-        { nx: 0.55, nz: 0.44, dir: -1, speed: 0.25, color: 0x3333ff },
-        { nx: 0.75, nz: 0.56, dir: 1, speed: 0.35, color: 0x33ff33 },
-        { nx: 0.85, nz: 0.32, dir: -1, speed: 0.28, color: 0xffff33 },
-        { nx: 0.60, nz: 0.70, dir: 1, speed: 0.32, color: 0xff33ff },
-        { nx: 0.50, nz: 0.06, dir: 1, speed: 0.22, color: 0x33ffff },
-      ];
-      
-      carSpecs.forEach(spec => {
-        const car = createCar(spec.color);
-        const [x, z] = toWorld(spec.nx, spec.nz);
-        car.position.set(x, 1.5, z);
-        car.userData.direction = spec.dir;
-        car.userData.speed = spec.speed;
-        car.userData.roadZ = z;
-        car.userData.minX = toWorld(0.42, 0)[0];
-        car.userData.maxX = toWorld(0.95, 0)[0];
-        if (spec.dir < 0) car.rotation.y = Math.PI;
-        LAYERS.props.add(car);
-        cars.push(car);
-      });
+      ensureTrafficSystem().createCars();
     }
     
     function createCar(color, options = {}) {
-      const group = new THREE.Group();
-      const isBlueprintCar = !!options.blueprintTraffic;
-      const assets = getSharedCarAssets();
-      
-      // Car body
-      const bodyMat = getCarBodyMaterial(color);
-      const body = new THREE.Mesh(assets.bodyGeo, bodyMat);
-      body.position.y = 1.5;
-      body.castShadow = true;
-      group.add(body);
-      
-      // Car roof
-      const roof = new THREE.Mesh(assets.roofGeo, bodyMat);
-      roof.position.set(-0.5, 3.5, 0);
-      roof.castShadow = true;
-      group.add(roof);
-      
-      // Wheels
-      const wheelPositions = [
-        [2.5, 0.5, 2.2], [2.5, 0.5, -2.2],
-        [-2.5, 0.5, 2.2], [-2.5, 0.5, -2.2]
-      ];
-      wheelPositions.forEach(([x, y, z]) => {
-        const wheel = new THREE.Mesh(assets.wheelGeo, assets.wheelMat);
-        wheel.position.set(x, y, z);
-        wheel.rotation.x = Math.PI / 2;
-        wheel.castShadow = false;  // Decorative - no shadow
-        group.add(wheel);
-      });
-      
-      // Headlights (front)
-      const hl1 = new THREE.Mesh(assets.headlightGeo, assets.headlightMat);
-      const hl2 = new THREE.Mesh(assets.headlightGeo, assets.headlightMat);
-      hl1.position.set(4.1, 1.5, 1.2);
-      hl2.position.set(4.1, 1.5, -1.2);
-      hl1.userData.isHeadlight = true;
-      hl2.userData.isHeadlight = true;
-      hl1.userData.blueprintTraffic = isBlueprintCar;
-      hl2.userData.blueprintTraffic = isBlueprintCar;
-      group.add(hl1, hl2);
-      headlights.push(hl1, hl2);
-      
-      // Taillights (back) 
-      const tl1 = new THREE.Mesh(assets.headlightGeo, assets.tailMat);
-      const tl2 = new THREE.Mesh(assets.headlightGeo, assets.tailMat);
-      tl1.position.set(-4.1, 1.5, 1.2);
-      tl2.position.set(-4.1, 1.5, -1.2);
-      group.add(tl1, tl2);
-      
-      return group;
+      return ensureTrafficSystem().createCar(color, options);
     }
     
     function animateCars() {
-      cars.forEach(car => {
-        car.position.x += car.userData.direction * car.userData.speed;
-        
-        // Wrap around when reaching road ends
-        if (car.position.x > car.userData.maxX) {
-          car.position.x = car.userData.minX;
-        } else if (car.position.x < car.userData.minX) {
-          car.position.x = car.userData.maxX;
-        }
-      });
+      ensureTrafficSystem().animateCars();
     }
     
     // Create street lamps
@@ -4872,7 +4142,7 @@ function getRoadLineStyle(type) {
         const [x, z] = toWorld(pos[0], pos[1]);
         const lamp = createStreetLamp();
         lamp.position.set(x, 0, z);
-        LAYERS.props.add(lamp);
+        addProp(LAYERS.props, lamp);
       });
     }
     
@@ -4914,7 +4184,7 @@ function getRoadLineStyle(type) {
       for (let i = 0; i < 3; i++) {
         const pylon = createPylon();
         pylon.position.set(cx, 0, cz - 30 + i * 30);
-        LAYERS.props.add(pylon);
+        addProp(LAYERS.props, pylon);
       }
     }
     
@@ -4950,7 +4220,7 @@ function getRoadLineStyle(type) {
         const tank = new THREE.Mesh(tankGeo, tankMat);
         tank.position.set(cx - 20 + i * 20, 5, cz);
         tank.castShadow = false;  // Small utility - no shadow
-        LAYERS.props.add(tank);
+        addProp(LAYERS.props, tank);
         
         // Water inside
         const waterGeo = new THREE.CylinderGeometry(11, 11, 2, 32);
@@ -4960,7 +4230,7 @@ function getRoadLineStyle(type) {
         });
         const water = new THREE.Mesh(waterGeo, waterMat);
         water.position.set(cx - 20 + i * 20, 8, cz);
-        LAYERS.props.add(water);
+        addProp(LAYERS.props, water);
       }
     }
     
@@ -4974,7 +4244,7 @@ function getRoadLineStyle(type) {
       });
       const pond = new THREE.Mesh(pondGeo, pondMat);
       pond.position.set(x, 1.5, z);
-      LAYERS.props.add(pond);
+      addProp(LAYERS.props, pond);
     }
     
     // Create boats for port area
@@ -4997,19 +4267,19 @@ function getRoadLineStyle(type) {
       const dock1 = new THREE.Mesh(new THREE.BoxGeometry(100, 2, 8), dockMat);
       dock1.position.set(portX, 0.5, portZ - 35);
       dock1.castShadow = false;  // Decorative - no shadow
-      LAYERS.props.add(dock1);
+      addProp(LAYERS.props, dock1);
       
       // West dock
       const dock2 = new THREE.Mesh(new THREE.BoxGeometry(8, 2, 60), dockMat);
       dock2.position.set(portX - 50, 0.5, portZ);
       dock2.castShadow = false;  // Decorative - no shadow
-      LAYERS.props.add(dock2);
+      addProp(LAYERS.props, dock2);
       
       // East dock
       const dock3 = new THREE.Mesh(new THREE.BoxGeometry(8, 2, 60), dockMat);
       dock3.position.set(portX + 50, 0.5, portZ);
       dock3.castShadow = false;  // Decorative - no shadow
-      LAYERS.props.add(dock3);
+      addProp(LAYERS.props, dock3);
       
       // Boats moored at docks - floating on water
       const boatPositions = [
@@ -5025,7 +4295,7 @@ function getRoadLineStyle(type) {
         boat.position.set(bx, 0, bz); // At water level
         boat.rotation.y = rot;
         boat.scale.setScalar(1.2);
-        LAYERS.props.add(boat);
+        addProp(LAYERS.props, boat);
       });
     }
     
@@ -5069,7 +4339,7 @@ function getRoadLineStyle(type) {
       worldPositions.forEach(([x, z]) => {
         const star = createStar();
         star.position.set(x, 60, z);
-        LAYERS.props.add(star);
+        addProp(LAYERS.props, star);
       });
     }
     
@@ -5492,13 +4762,6 @@ function getRoadLineStyle(type) {
     let isNight = false;
     let fidelityModeActive = false;
     let animationEnabled = true;
-    let lastRenderTime = 0;
-    const RENDER_FPS = {
-      realtime: 60,
-      realtimeIdle: 30,
-      idle: 20,
-      idleNoAnim: 8
-    };
     const PERF_LOGGING = false;
     const fidelityState = {
       shadowEnabled: renderer.shadowMap.enabled,
@@ -5582,54 +4845,19 @@ function getRoadLineStyle(type) {
       }
     });
     
-    function setViewMode(mode) {
-      if (viewMode === 'fidelity' && mode !== 'fidelity') {
-        applyFidelityMode(false);
-      }
-      viewMode = mode;
-      
-      ['btnPlan','btn3D','btnStreet','btnFidelity'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.classList.remove('active');
-      });
-      
-      switch (mode) {
-        case 'plan':
-          activeCamera = orthoCamera;
-          controls.enabled = false;
-          document.getElementById('btnPlan').classList.add('active');
-          break;
-        case '3d':
-          activeCamera = perspCamera;
-          controls.enabled = true;
-          perspCamera.position.set(-600, 400, 600);
-          controls.target.set(0, 0, 0);
-          controls.update();
-          document.getElementById('btn3D').classList.add('active');
-          break;
-        case 'street':
-          activeCamera = perspCamera;
-          controls.enabled = true;
-          perspCamera.position.set(0, 30, 200);
-          controls.target.set(0, 20, 0);
-          controls.update();
-          document.getElementById('btnStreet').classList.add('active');
-          break;
-        case 'fidelity':
-          activeCamera = orthoCamera;
-          controls.enabled = false;
-          applyFidelityMode(true);
-          document.getElementById('btnFidelity').classList.add('active');
-          break;
-      }
-      
-      updateOverlayVisibility();
-      if (editorState.enabled) {
-        updateEditorStatus(viewMode === 'fidelity' ? 'Editor ready.' : 'Editor paused (switch to Fidelity Mode).');
-      }
-      if (editorGroup) editorGroup.visible = editorState.enabled && viewMode === 'fidelity';
-      setCityLayerVisibility();
-    }
+    const viewModeController = createViewModeController({
+      getViewMode: () => viewMode,
+      setViewModeValue: (mode) => { viewMode = mode; },
+      cameras: { orthoCamera, perspCamera, setActiveCamera },
+      controls,
+      applyFidelityMode,
+      updateOverlayVisibility,
+      updateEditorStatus,
+      editorState,
+      editorGroup,
+      setCityLayerVisibility
+    });
+    const setViewMode = (mode) => viewModeController.setViewMode(mode);
     
     function setTimeOfDay(night) {
       isNight = night;
@@ -5755,104 +4983,8 @@ function getRoadLineStyle(type) {
       });
     }
     
-    // Touch Controls - Virtual Joystick
-    const joystick = document.getElementById('joystick');
-    const joystickKnob = document.getElementById('joystickKnob');
-    let joystickActive = false;
-    let joystickOrigin = { x: 0, y: 0 };
-    
-    if (joystick && joystickKnob) {
-      joystick.addEventListener('touchstart', (e) => {
-        joystickActive = true;
-        const rect = joystick.getBoundingClientRect();
-        joystickOrigin = { 
-          x: rect.left + rect.width / 2, 
-          y: rect.top + rect.height / 2 
-        };
-        e.preventDefault();
-      });
-      
-      joystick.addEventListener('touchmove', (e) => {
-        if (!joystickActive) return;
-        const touch = e.touches[0];
-        const dx = touch.clientX - joystickOrigin.x;
-        const dy = touch.clientY - joystickOrigin.y;
-        const maxDist = 35;
-        const dist = Math.min(Math.sqrt(dx*dx + dy*dy), maxDist);
-        const angle = Math.atan2(dy, dx);
-        
-        const kx = Math.cos(angle) * dist;
-        const ky = Math.sin(angle) * dist;
-        
-        joystickKnob.style.transform = `translate(calc(-50% + ${kx}px), calc(-50% + ${ky}px))`;
-        
-        // Apply to camera movement
-        if (viewMode === '3d' || viewMode === 'street') {
-          const moveSpeed = 2;
-          const dxWorld = (kx / maxDist) * moveSpeed;
-          const dzWorld = (ky / maxDist) * moveSpeed;
-          perspCamera.position.x += dxWorld;
-          perspCamera.position.z += dzWorld;
-          controls.target.x += dxWorld;
-          controls.target.z += dzWorld;
-        }
-        e.preventDefault();
-      });
-      
-      joystick.addEventListener('touchend', () => {
-        joystickActive = false;
-        joystickKnob.style.transform = 'translate(-50%, -50%)';
-      });
-    }
-    
-    // Zoom controls (desktop only)
-    const zoomIn = document.getElementById('zoomIn');
-    const zoomOut = document.getElementById('zoomOut');
-    const isCoarse = window.matchMedia('(pointer: coarse)').matches;
-    
-    if (!isCoarse && zoomIn && zoomOut) {
-      zoomIn.addEventListener('click', () => {
-        if (viewMode === '3d' || viewMode === 'street') {
-          perspCamera.position.y = Math.max(50, perspCamera.position.y - 50);
-          perspCamera.fov = Math.max(30, perspCamera.fov - 5);
-          perspCamera.updateProjectionMatrix();
-        }
-      });
-      
-      zoomOut.addEventListener('click', () => {
-        if (viewMode === '3d' || viewMode === 'street') {
-          perspCamera.position.y = Math.min(800, perspCamera.position.y + 50);
-          perspCamera.fov = Math.min(90, perspCamera.fov + 5);
-          perspCamera.updateProjectionMatrix();
-        }
-      });
-    }
-    
-    // Touch gesture support for the canvas
-    let touchStartDist = 0;
-    renderer.domElement.addEventListener('touchstart', (e) => {
-      if (e.touches.length === 2) {
-        const dx = e.touches[0].clientX - e.touches[1].clientX;
-        const dy = e.touches[0].clientY - e.touches[1].clientY;
-        touchStartDist = Math.sqrt(dx*dx + dy*dy);
-      }
-    });
-    
-    renderer.domElement.addEventListener('touchmove', (e) => {
-      if (e.touches.length === 2 && viewMode !== 'plan') {
-        const dx = e.touches[0].clientX - e.touches[1].clientX;
-        const dy = e.touches[0].clientY - e.touches[1].clientY;
-        const dist = Math.sqrt(dx*dx + dy*dy);
-        const delta = dist - touchStartDist;
-        
-        // Pinch zoom
-        perspCamera.position.y -= delta * 0.5;
-        perspCamera.position.y = Math.max(50, Math.min(800, perspCamera.position.y));
-        
-        touchStartDist = dist;
-        e.preventDefault();
-      }
-    });
+    // Touch controls + pinch/zoom controls
+    ensureGestures().setup();
     
     // ============================================
     // COMPASS
@@ -5904,32 +5036,8 @@ function getRoadLineStyle(type) {
     // ============================================
     // RAYCASTING FOR ZONE INFO
     // ============================================
-    
-    const raycaster = new THREE.Raycaster();
-    const mouse = new THREE.Vector2();
-    
-    function onMouseMove(event) {
-      mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-      mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-      
-      raycaster.setFromCamera(mouse, activeCamera);
-      const zonesToTest = blueprintCityEnabled ? blueprintZoneMeshes : zones;
-      const intersects = raycaster.intersectObjects(zonesToTest);
-      
-      if (intersects.length > 0) {
-        const zone = intersects[0].object;
-        const data = zone.userData;
-        if (data.label) {
-          const info = getLegendInfo(data.label);
-          document.getElementById('zoneInfo').textContent = 
-            `${normalizeTypeCode(data.label)}: ${info.label || data.type}`;
-        }
-      } else {
-        document.getElementById('zoneInfo').textContent = 'Hover over zones for info';
-      }
-    }
-    
-    window.addEventListener('mousemove', onMouseMove);
+    const editorRaycaster = new THREE.Raycaster();
+    const placementMouse = new THREE.Vector2();
     
     // ============================================
     // PLACEMENT DEBUG TOOL
@@ -5941,11 +5049,11 @@ function getRoadLineStyle(type) {
       // Only log on left click (button 0) and when holding Shift
       if (e.button !== 0 || !e.shiftKey) return;
       
-      mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
-      mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
-      raycaster.setFromCamera(mouse, activeCamera);
+      placementMouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+      placementMouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+      editorRaycaster.setFromCamera(placementMouse, activeCamera);
       
-      if (!raycaster.ray.intersectPlane(groundPlane, tmpP)) return;
+      if (!editorRaycaster.ray.intersectPlane(groundPlane, tmpP)) return;
       
       const x = tmpP.x;
       const z = tmpP.z;
@@ -6016,99 +5124,107 @@ function getRoadLineStyle(type) {
       const loadingBar = document.getElementById('loadingBar');
       
       loadingBar.style.width = '20%';
+
+      try {
+        loadOverlayImageFromStore();
+        const migrationImageId = getOverlayImageId() || PERSISTENCE_IMAGE_ID;
+        runMigrations({ imageId: migrationImageId });
+      } catch (error) {
+        console.warn('Failed to run migrations:', error);
+      }
       
-      // Phase 1: 2D Zones
-      buildPhase1();
-      loadingBar.style.width = '40%';
-      
-      // Phase 2: 3D Buildings
-      setTimeout(async () => {
-        buildPhase2();
-        loadingBar.style.width = '70%';
-        
-        // Animated water
-        createAnimatedWater();
-        loadingBar.style.width = '80%';
-        
-        // Map overlay
-        try {
-          const overlayResult = await createMapOverlay({
-            textureUrl: './Master_AI_MAP.png',
-            imgW: MAP_OVERLAY_IMG_W,
-            imgH: MAP_OVERLAY_IMG_H,
+      await ensureExampleCityBuilt({
+        delayMs: 100,
+        onPhase1Done: () => {
+          loadingBar.style.width = '40%';
+        },
+        onPhase2Done: async () => {
+          loadingBar.style.width = '70%';
+
+          // Animated water
+          createAnimatedWater();
+          loadingBar.style.width = '80%';
+
+          // Map overlay
+          try {
+          const uploadedDataUrl = getOverlayImageDataURL();
+          const uploadedMeta = getOverlayImageMeta();
+          mapOverlayImgW = uploadedMeta?.width || MAP_OVERLAY_IMG_W;
+          mapOverlayImgH = uploadedMeta?.height || MAP_OVERLAY_IMG_H;
+
+          mapOverlayGroup = new THREE.Group();
+          mapOverlayGroup.name = 'MapOverlayGroup';
+          LAYERS.overlay.add(mapOverlayGroup);
+
+          overlayLayer = await createOverlayLayer({
+            renderer,
+            textureUrl: uploadedDataUrl || './Master_AI_MAP.png',
+            imgW: mapOverlayImgW,
+            imgH: mapOverlayImgH,
             worldW: MAP_OVERLAY_WORLD_W,
             worldH: MAP_OVERLAY_WORLD_H,
             y: Y.overlay,
             opacity: 0.9,
             visible: true,
             renderOnTop: false,
-            renderer: renderer
+            dimmerOpacity: 0,
+            overlayGroup: mapOverlayGroup,
+            syncBlueprintRoot: syncBlueprintRootToOverlay,
+            updateLineResolution,
+            blueprintGroups: { overlayBounds }
           });
-          
-          mapOverlayGroup = new THREE.Group();
-          mapOverlayGroup.name = 'MapOverlayGroup';
-          mapOverlayMesh = overlayResult.mesh;
-          mapOverlayMesh.raycast = () => null;
-          mapOverlayGroup.add(mapOverlayMesh);
-          const dimmerMat = new THREE.MeshBasicMaterial({
-            color: 0x000000,
-            transparent: true,
-            opacity: 0,
-            depthWrite: false
-          });
-          dimmerMat.depthTest = false;
-          overlayDimmer = new THREE.Mesh(
-            new THREE.PlaneGeometry(MAP_OVERLAY_WORLD_W, MAP_OVERLAY_WORLD_H),
-            dimmerMat
-          );
-          overlayDimmer.geometry.rotateX(-Math.PI / 2);
-          overlayDimmer.position.y = Y.overlay + 0.001;
-          overlayDimmer.renderOrder = 2;
-          mapOverlayGroup.add(overlayDimmer);
-          LAYERS.overlay.add(mapOverlayGroup);
+
+          mapOverlayMesh = overlayLayer.mapOverlayMesh;
+          overlayDimmer = overlayLayer.overlayDimmer;
+          mapCoordMapper = overlayLayer.mapCoordMapper;
+
           syncBlueprintRootToOverlay();
           exposeDebugState();
-          
-          // Create coordinate mapper
-          mapCoordMapper = new MapCoordMapper({
-            imgW: MAP_OVERLAY_IMG_W,
-            imgH: MAP_OVERLAY_IMG_H,
-            worldW: MAP_OVERLAY_WORLD_W,
-            worldH: MAP_OVERLAY_WORLD_H,
-            origin: new THREE.Vector3(0, 0, 0)
-          });
-          // Map orientation: image right is +X, image down is +Z (centered at world origin).
-          
+          applyOverlayCalibKey();
+
           // Setup overlay controls
           setupOverlayControls();
           setupDebugHelpers();
           setupDebugControls();
           setupBlueprintControls();
           setupEditorControls();
+          if (!editorRebuildScheduler) {
+            editorRebuildScheduler = createEditorRebuildScheduler({
+              getBlueprintData: () => blueprintData,
+              buildBlueprintFromData,
+              rebuildBlueprintCity,
+              updateSelectionMarkers
+            });
+          }
           bindEditorEvents();
           await loadBlueprintData();
-          
+          const controller = ensureCityModeController();
+          await controller.applyInitialMode();
+          cityModeState.mode = controller.getMode();
+          syncTrafficPanel();
+
           console.log('Map overlay loaded. coordMapper available for pixel-to-world conversion.');
-        } catch (error) {
-          console.warn('Failed to load map overlay:', error);
-        }
-        
-        loadingBar.style.width = '90%';
-        
-        // Set initial view
-        setTimeOfDay(false);
-        setViewMode('plan');
-        
-        loadingBar.style.width = '100%';
-        
-        // Hide loading screen
-        setTimeout(() => {
-          document.getElementById('loading').style.opacity = '0';
+          } catch (error) {
+            console.warn('Failed to load map overlay:', error);
+          }
+
+          loadingBar.style.width = '90%';
+
+          // Set initial view
+          setTimeOfDay(false);
+          setViewMode('plan');
+
+          loadingBar.style.width = '100%';
+
+          // Hide loading screen
           setTimeout(() => {
-            document.getElementById('loading').style.display = 'none';
-          }, 500);
-        }, 300);
-      }, 100);
+            document.getElementById('loading').style.opacity = '0';
+            setTimeout(() => {
+              document.getElementById('loading').style.display = 'none';
+            }, 500);
+          }, 300);
+        }
+      });
     }
     
     function setupOverlayControls() {
@@ -6151,8 +5267,9 @@ function getRoadLineStyle(type) {
       
       const loadSettings = () => {
         try {
-          const stored = localStorage.getItem(OVERLAY_STORAGE_KEY);
-          if (stored) return normalizeOverlaySettings(JSON.parse(stored));
+          applyOverlayCalibKey();
+          const stored = getItem(PERSIST_KEYS.overlayCalib);
+          if (stored) return normalizeOverlaySettings(stored);
         } catch (e) {
           console.warn('Failed to load overlay calibration:', e);
         }
@@ -6161,7 +5278,8 @@ function getRoadLineStyle(type) {
       
       const saveSettings = () => {
         try {
-          localStorage.setItem(OVERLAY_STORAGE_KEY, JSON.stringify(overlaySettings));
+          applyOverlayCalibKey();
+          setItem(PERSIST_KEYS.overlayCalib, overlaySettings);
         } catch (e) {
           console.warn('Failed to save overlay calibration:', e);
         }
@@ -6286,14 +5404,14 @@ function getRoadLineStyle(type) {
       }
 
       if (panelToggle && panel) {
-        const STORAGE_KEY = 'tadhgOverlayPanelCollapsed';
         const applyPanelState = (collapsed) => {
           panel.classList.toggle('collapsed', collapsed);
           panelToggle.textContent = collapsed ? 'Show' : 'Hide';
         };
         let collapsed = false;
         try {
-          collapsed = localStorage.getItem(STORAGE_KEY) === 'true';
+          const stored = getItem(PERSIST_KEYS.overlayPanelCollapsed);
+          if (typeof stored === 'boolean') collapsed = stored;
         } catch (e) {
           collapsed = false;
         }
@@ -6302,7 +5420,7 @@ function getRoadLineStyle(type) {
           collapsed = !collapsed;
           applyPanelState(collapsed);
           try {
-            localStorage.setItem(STORAGE_KEY, collapsed ? 'true' : 'false');
+            setItem(PERSIST_KEYS.overlayPanelCollapsed, collapsed);
           } catch (e) {
             // ignore
           }
@@ -6336,37 +5454,24 @@ function getRoadLineStyle(type) {
       const saveBtn = document.getElementById('blueprintSave');
       const copyBtn = document.getElementById('blueprintCopy');
       const validateBtn = document.getElementById('blueprintValidate');
+      const overlayUploadBtn = document.getElementById('overlayUpload');
       const jsonField = document.getElementById('blueprintJson');
       const useCityToggle = document.getElementById('blueprintUseCity');
-      const opacitySlider = document.getElementById('blueprintOpacity');
-      const opacityInput = document.getElementById('blueprintOpacityValue');
-      const labelsToggle = document.getElementById('blueprintLabels');
 
       if (!loadBtn || !saveBtn || !copyBtn || !validateBtn || !jsonField) return;
 
-      const applyPreviewSettings = () => {
-        if (opacitySlider) opacitySlider.value = blueprintPreviewSettings.opacity;
-        if (opacityInput) opacityInput.value = blueprintPreviewSettings.opacity;
-        if (labelsToggle) labelsToggle.checked = blueprintPreviewSettings.showLabels;
-      };
-
-      const updateBlueprintPreview = () => {
-        if (!blueprintData) return;
-        buildBlueprintFromData(blueprintData);
-      };
-
-      const bindOpacityInputs = () => {
-        if (!opacitySlider || !opacityInput) return;
-        const sync = (value) => {
-          const clamped = clampNumber(Number.parseFloat(value), 0.1, 1);
-          blueprintPreviewSettings.opacity = clamped;
-          opacitySlider.value = clamped;
-          opacityInput.value = clamped;
-          updateBlueprintPreview();
-        };
-        opacitySlider.addEventListener('input', (e) => sync(e.target.value));
-        opacityInput.addEventListener('input', (e) => sync(e.target.value));
-      };
+      try {
+        const storedOpacity = getItem(PERSIST_KEYS.blueprintOpacity);
+        if (Number.isFinite(storedOpacity)) {
+          blueprintPreviewSettings.opacity = clampNumber(storedOpacity, 0.1, 1);
+        }
+        const storedLabels = getItem(PERSIST_KEYS.blueprintShowLabels);
+        if (typeof storedLabels === 'boolean') {
+          blueprintPreviewSettings.showLabels = storedLabels;
+        }
+      } catch (e) {
+        // ignore persistence load errors
+      }
 
       const updateJsonField = () => {
         if (!blueprintData) {
@@ -6423,6 +5528,85 @@ function getRoadLineStyle(type) {
         }
       });
 
+      if (overlayUploadBtn) {
+        const fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.accept = 'image/*';
+        fileInput.style.display = 'none';
+        overlayUploadBtn.insertAdjacentElement('afterend', fileInput);
+
+        overlayUploadBtn.addEventListener('click', () => {
+          fileInput.click();
+        });
+
+        fileInput.addEventListener('change', async (event) => {
+          const file = event.target.files?.[0];
+          if (!file) {
+            pendingScan = false;
+            return;
+          }
+          try {
+            const result = await setOverlayImageFromFile(file);
+            if (!result) {
+              pendingScan = false;
+              return;
+            }
+
+            mapOverlayImgW = result.meta?.width || MAP_OVERLAY_IMG_W;
+            mapOverlayImgH = result.meta?.height || MAP_OVERLAY_IMG_H;
+            applyOverlayCalibKey();
+
+            const overlayResult = await createOverlayLayer({
+              renderer,
+              textureUrl: result.dataUrl,
+              imgW: mapOverlayImgW,
+              imgH: mapOverlayImgH,
+              worldW: MAP_OVERLAY_WORLD_W,
+              worldH: MAP_OVERLAY_WORLD_H,
+              y: Y.overlay,
+              opacity: overlaySettings?.opacity ?? OVERLAY_DEFAULTS.opacity,
+              visible: overlaySettings?.visible ?? true,
+              renderOnTop: false,
+              dimmerOpacity: overlaySettings?.dimmer ?? OVERLAY_DEFAULTS.dimmer,
+              overlayGroup: mapOverlayGroup,
+              syncBlueprintRoot: syncBlueprintRootToOverlay,
+              updateLineResolution,
+              blueprintGroups: { overlayBounds }
+            });
+
+            if (mapOverlayMesh) mapOverlayGroup.remove(mapOverlayMesh);
+            if (overlayDimmer) mapOverlayGroup.remove(overlayDimmer);
+            mapOverlayMesh = overlayResult.mapOverlayMesh;
+            overlayDimmer = overlayResult.overlayDimmer;
+            mapCoordMapper = overlayResult.mapCoordMapper;
+            overlayLayer = overlayResult;
+            updateOverlayVisibility();
+            verifyOverlayMapping();
+
+            if (pendingScan) {
+              pendingScan = false;
+              const scanResult = await ensureScannerController().scanFromOverlay();
+              if (!scanResult?.ok) {
+                if (scanResult.reason === 'invalid-blueprint-draft') {
+                  const firstError = scanResult?.errors?.[0] || 'unknown validation error';
+                  setBlueprintStatus(`Blueprint status: scan draft invalid (${firstError}).`, false);
+                } else if (scanResult.reason === 'normalize-failed') {
+                  setBlueprintStatus('Blueprint status: scan draft normalization failed.', false);
+                } else {
+                  const reason = scanResult?.reason ? ` (${scanResult.reason})` : '';
+                  setBlueprintStatus(`Blueprint status: scan placeholder failed.${reason}`, false);
+                }
+              }
+            }
+          } catch (err) {
+            console.warn('Failed to load uploaded overlay:', err);
+            pendingScan = false;
+          } finally {
+            fileInput.value = '';
+          }
+        });
+      }
+
       loadBtn.addEventListener('click', () => {
         const raw = jsonField.value.trim();
         if (!raw) {
@@ -6433,7 +5617,8 @@ function getRoadLineStyle(type) {
           const parsed = JSON.parse(raw);
           const result = validateRaw(parsed, 'Blueprint load');
           if (!result.ok) return;
-          blueprintData = normalizeBlueprintData(parsed);
+          blueprintModel.loadFromJSON(parsed);
+          blueprintData = blueprintModel.getData();
           buildBlueprintFromData(blueprintData);
           rebuildBlueprintCity();
           setBlueprintStatus('Blueprint status: loaded from textarea.');
@@ -6446,18 +5631,10 @@ function getRoadLineStyle(type) {
         useCityToggle.checked = blueprintCityEnabled;
         useCityToggle.addEventListener('change', (e) => {
           setBlueprintCityEnabled(!!e.target.checked);
+          cityModeState.mode = e.target.checked ? 'blueprint' : 'example';
+          syncTrafficPanel();
         });
       }
-
-      if (labelsToggle) {
-        labelsToggle.addEventListener('change', (e) => {
-          blueprintPreviewSettings.showLabels = !!e.target.checked;
-          updateBlueprintPreview();
-        });
-      }
-
-      bindOpacityInputs();
-      applyPreviewSettings();
     }
 
     function editorActive() {
@@ -6576,23 +5753,32 @@ function getRoadLineStyle(type) {
       line.material.resolution.set(window.innerWidth, window.innerHeight);
     }
 
+    function ensureEditorHitTest() {
+      if (!editorHitTest) {
+        editorHitTest = createEditorHitTest({
+          mapOverlayGroupRef: () => mapOverlayGroup,
+          raycaster: editorRaycaster,
+          THREE,
+          Y,
+          getActiveCamera: () => activeCamera,
+          orthoCamera,
+          MAP_WIDTH,
+          MAP_HEIGHT,
+          getViewportSize: () => ({
+            width: window.innerWidth,
+            height: window.innerHeight
+          })
+        });
+      }
+      return editorHitTest;
+    }
+
     function canPanMap() {
-      const viewW = (orthoCamera.right - orthoCamera.left) / orthoCamera.zoom;
-      const viewH = (orthoCamera.top - orthoCamera.bottom) / orthoCamera.zoom;
-      return (MAP_WIDTH > viewW + 1) || (MAP_HEIGHT > viewH + 1);
+      return ensureEditorHitTest().canPanMap();
     }
 
     function applyPanDelta(dxPx, dyPx) {
-      const viewW = (orthoCamera.right - orthoCamera.left) / orthoCamera.zoom;
-      const viewH = (orthoCamera.top - orthoCamera.bottom) / orthoCamera.zoom;
-      const worldPerPxX = viewW / window.innerWidth;
-      const worldPerPxZ = viewH / window.innerHeight;
-      const dxWorld = -dxPx * worldPerPxX;
-      const dzWorld = -dyPx * worldPerPxZ;
-      orthoCamera.position.x += dxWorld;
-      orthoCamera.position.z += dzWorld;
-      orthoCamera.lookAt(orthoCamera.position.x, 0, orthoCamera.position.z);
-      orthoCamera.updateProjectionMatrix();
+      return ensureEditorHitTest().applyPanDelta(dxPx, dyPx);
     }
 
     function applyEditorZoom(value) {
@@ -6736,14 +5922,7 @@ function getRoadLineStyle(type) {
       if (zoomValue) zoomValue.value = editorState.mapZoom;
       if (scaleSlider) scaleSlider.value = editorState.handleScale;
       if (scaleValue) scaleValue.value = editorState.handleScale;
-      const trafficCarSlider = document.getElementById('trafficCarCount');
-      const trafficCarValue = document.getElementById('trafficCarCountValue');
-      const trafficSpeedSlider = document.getElementById('trafficSpeed');
-      const trafficSpeedValue = document.getElementById('trafficSpeedValue');
-      if (trafficCarSlider) trafficCarSlider.value = trafficRuntime.maxCars;
-      if (trafficCarValue) trafficCarValue.value = trafficRuntime.maxCars;
-      if (trafficSpeedSlider) trafficSpeedSlider.value = trafficRuntime.speedScale;
-      if (trafficSpeedValue) trafficSpeedValue.value = trafficRuntime.speedScale;
+      syncTrafficPanel();
       updateEditorHeightControls();
     }
 
@@ -6771,41 +5950,23 @@ function getRoadLineStyle(type) {
     }
 
     function getPointerMapPoint(event) {
-      if (!mapOverlayGroup) return null;
-      const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -Y.overlay);
-      const mouseVec = new THREE.Vector2(
-        (event.clientX / window.innerWidth) * 2 - 1,
-        -(event.clientY / window.innerHeight) * 2 + 1
-      );
-      raycaster.setFromCamera(mouseVec, activeCamera);
-      const hit = new THREE.Vector3();
-      if (!raycaster.ray.intersectPlane(plane, hit)) return null;
-      mapOverlayGroup.worldToLocal(hit);
-      return { x: hit.x, z: hit.z };
+      return ensureEditorHitTest().getPointerMapPoint(event);
+    }
+
+    function ensureEditorSnapEngine() {
+      if (!editorSnapEngine) {
+        editorSnapEngine = createEditorSnapEngine({
+          editorState,
+          getMapCoordMapper: () => mapCoordMapper,
+          GRID_STEP_X,
+          GRID_STEP_Z
+        });
+      }
+      return editorSnapEngine;
     }
 
     function snapMapPoint(point) {
-      let x = point.x;
-      let z = point.z;
-
-      if (editorState.snapGrid) {
-        x = Math.round(x / GRID_STEP_X) * GRID_STEP_X;
-        z = Math.round(z / GRID_STEP_Z) * GRID_STEP_Z;
-      }
-
-      if (editorState.snapPixels && mapCoordMapper) {
-        const px = mapCoordMapper.worldToPx(x, z);
-        const step = Math.max(1, editorState.pixelStep);
-        const snappedPx = {
-          px: Math.round(px.px / step) * step,
-          py: Math.round(px.py / step) * step
-        };
-        const snapped = mapCoordMapper.pxToWorld(snappedPx.px, snappedPx.py);
-        x = snapped.x;
-        z = snapped.z;
-      }
-
-      return { x, z };
+      return ensureEditorSnapEngine().snapMapPoint(point);
     }
 
     function updateDraftLine() {
@@ -6992,14 +6153,15 @@ function getRoadLineStyle(type) {
     }
 
     function scheduleEditorRebuild() {
-      if (editorRebuildRaf) return;
-      editorRebuildRaf = requestAnimationFrame(() => {
-        editorRebuildRaf = null;
-        if (!blueprintData) return;
-        buildBlueprintFromData(blueprintData);
-        rebuildBlueprintCity();
-        updateSelectionMarkers();
-      });
+      if (!editorRebuildScheduler) {
+        editorRebuildScheduler = createEditorRebuildScheduler({
+          getBlueprintData: () => blueprintData,
+          buildBlueprintFromData,
+          rebuildBlueprintCity,
+          updateSelectionMarkers
+        });
+      }
+      editorRebuildScheduler.schedule();
     }
 
     function updateSelectionMarkers() {
@@ -7159,74 +6321,296 @@ function getRoadLineStyle(type) {
       return { entry: list[index], layer, index };
     }
 
-    function cloneBlueprintData(data) {
-      const fallback = normalizeBlueprintData({});
-      if (!data) return fallback;
-      try {
-        return JSON.parse(JSON.stringify(data));
-      } catch (e) {
-        console.warn('Blueprint clone failed, resetting.', e);
-        return fallback;
+    function ensureEditorHistoryManager() {
+      if (!editorHistoryManager) {
+        editorHistoryManager = createEditorHistoryManager({
+          getBlueprintData: () => blueprintData,
+          setBlueprintData: (next) => { blueprintData = next; },
+          blueprintModel,
+          editorState,
+          editorHistory,
+          normalizeBlueprintData,
+          clearJunctionMode,
+          buildBlueprintFromData,
+          rebuildBlueprintCity,
+          updateDraftLine,
+          updateDraftMarkers,
+          updateSelectionMarkers,
+          updateEditorStatus
+        });
       }
+      return editorHistoryManager;
+    }
+
+    function ensurePanelManager() {
+      if (!panelManager) {
+        if (!uiEventBus) {
+          uiEventBus = createEventBus({
+            strict: isDevMode(),
+            allowed: ['traffic/setMaxCars', 'traffic/setSpeedScale', 'blueprintPreview/setOpacity', 'blueprintPreview/setShowLabels']
+          });
+          uiEventBus.on('traffic/setMaxCars', (value) => {
+            trafficRuntime.maxCars = Math.max(0, Math.min(40, Number.parseInt(value, 10) || 0));
+            try {
+              setItem(PERSIST_KEYS.trafficMaxCars, trafficRuntime.maxCars);
+            } catch (e) {
+              // ignore persistence errors
+            }
+            rebuildBlueprintTraffic();
+          });
+          uiEventBus.on('traffic/setSpeedScale', (value) => {
+            trafficRuntime.speedScale = Math.max(0.2, Math.min(3, Number.parseFloat(value) || 1));
+            try {
+              setItem(PERSIST_KEYS.trafficSpeedScale, trafficRuntime.speedScale);
+            } catch (e) {
+              // ignore persistence errors
+            }
+          });
+          uiEventBus.on('blueprintPreview/setOpacity', (value) => {
+            setBlueprintPreviewOpacity(value);
+          });
+          uiEventBus.on('blueprintPreview/setShowLabels', (value) => {
+            setBlueprintPreviewLabels(value);
+          });
+        }
+        trafficPanel = createTrafficPanel({
+          actions: {
+            setTrafficMaxCars: (value) => uiEventBus.emit('traffic/setMaxCars', value),
+            setTrafficSpeedScale: (value) => uiEventBus.emit('traffic/setSpeedScale', value)
+          },
+          state: {
+            traffic: {
+              maxCars: trafficRuntime.maxCars,
+              speedScale: trafficRuntime.speedScale
+            }
+          }
+        });
+        cityModePanel = createCityModePanel({
+          actions: {
+            openScan: () => {
+              pendingScan = true;
+              const upload = document.getElementById('overlayUpload');
+              upload?.click();
+            },
+            setMode: async (mode) => {
+              const controller = ensureCityModeController();
+              await controller.setMode(mode);
+              cityModeState.mode = controller.getMode();
+              syncTrafficPanel();
+            }
+          },
+          state: {
+            cityMode: {
+              mode: cityModeState.mode
+            }
+          }
+        });
+        overlayPanel = createOverlayPanel({
+          state: {
+            overlay: {
+              opacity: overlaySettings?.opacity ?? OVERLAY_DEFAULTS.opacity
+            }
+          }
+        });
+        blueprintPreviewPanel = createBlueprintPreviewPanel({
+          actions: {
+            setOpacity: (value) => uiEventBus.emit('blueprintPreview/setOpacity', value),
+            setShowLabels: (value) => uiEventBus.emit('blueprintPreview/setShowLabels', value)
+          },
+          state: {
+            blueprintPreview: {
+              opacity: blueprintPreviewSettings.opacity,
+              showLabels: blueprintPreviewSettings.showLabels
+            }
+          }
+        });
+        zoneInfoPanel = createZoneInfoPanel({
+          three: THREE,
+          getActiveCamera: () => activeCamera,
+          getZonesToTest: () => (blueprintCityEnabled ? blueprintZoneMeshes : zones),
+          getLegendInfo,
+          normalizeTypeCode
+        });
+        devHudPanel = createDevHUDPanel({
+          enabled: isDevMode(),
+          actions: {
+            runProbe: async () => {
+              if (typeof window.runRefactorProbe !== 'function') {
+                devHudState.lastProbe = { error: 'runRefactorProbe unavailable (open ?refactorProbe=1)' };
+                panelManager?.syncAll({ devHud: { lastProbe: devHudState.lastProbe } });
+                return devHudState.lastProbe;
+              }
+              try {
+                const raw = window.runRefactorProbe();
+                devHudState.lastProbe = summarizeProbeForHUD(raw);
+              } catch (error) {
+                devHudState.lastProbe = { error: String(error?.message || error) };
+              }
+              panelManager?.syncAll({ devHud: { lastProbe: devHudState.lastProbe } });
+              return devHudState.lastProbe;
+            }
+          },
+          state: {
+            devHud: {
+              lastProbe: devHudState.lastProbe
+            }
+          }
+        });
+        panelManager = createPanelManager({ panels: [trafficPanel, cityModePanel, overlayPanel, blueprintPreviewPanel, zoneInfoPanel, devHudPanel] });
+      }
+      return panelManager;
+    }
+
+    function initTrafficPanel() {
+      ensurePanelManager().initAll();
+      syncTrafficPanel();
+    }
+
+    function syncTrafficPanel() {
+      ensurePanelManager().syncAll({
+        traffic: {
+          maxCars: trafficRuntime.maxCars,
+          speedScale: trafficRuntime.speedScale
+        },
+        overlay: {
+          opacity: overlaySettings?.opacity ?? OVERLAY_DEFAULTS.opacity
+        },
+        blueprintPreview: {
+          opacity: blueprintPreviewSettings.opacity,
+          showLabels: blueprintPreviewSettings.showLabels
+        },
+        cityMode: {
+          mode: cityModeState.mode
+        },
+        devHud: {
+          lastProbe: devHudState.lastProbe
+        }
+      });
+    }
+
+    function ensureEditorController() {
+      if (!editorController) {
+        editorController = createEditorController({
+          editorState,
+          trafficRuntime,
+          PERSIST_KEYS,
+          getItem,
+          setItem,
+          getBlueprintData: () => blueprintData,
+          setBlueprintData: (next) => { blueprintData = next; },
+          blueprintModel,
+          normalizeBlueprintData,
+          pushEditorHistory,
+          snapshotEditorState,
+          buildBlueprintFromData,
+          rebuildBlueprintCity,
+          rebuildBlueprintTraffic,
+          updateEditorStatus,
+          ensureEditorGroups,
+          getEditorGroup: () => editorGroup,
+          getViewMode: () => viewMode,
+          updateEditorUIState,
+          updateDraftLine,
+          updateDraftMarkers,
+          updateSelectionMarkers,
+          clearJunctionMode,
+          getSelectedEntry,
+          getLegendInfo,
+          hideEditorLines,
+          setBlueprintStatus,
+          applyEditorZoom,
+          applyHandleScale,
+          initTrafficPanel,
+          syncTrafficPanel,
+          deleteSelection,
+          setCityLayerVisibility,
+          undoEditor,
+          redoEditor
+        });
+      }
+      return editorController;
+    }
+
+    function ensureEditorInputRouter() {
+      if (!editorInputRouter) {
+        editorInputRouter = createEditorInputRouter({
+          renderer,
+          editorActive,
+          getActiveCamera: () => activeCamera,
+          orthoCamera,
+          canPanMap,
+          panState,
+          getPointerMapPoint,
+          snapMapPoint,
+          getEditorMode,
+          isDoubleClick,
+          findNearestDraftVertex,
+          findNearestVertex,
+          getSelectedEntry,
+          findNearestVertexInEntry,
+          findNearestEdgeInEntry,
+          pointInPolygon,
+          handleEditorPointerDown,
+          applyPanDelta,
+          editorState,
+          updateDraftLine,
+          updateEditorHover,
+          findNearestLineEndpoint,
+          findNearestLineVertex,
+          findNearestLineEdge,
+          getEditorHitRadius,
+          getBlueprintData: () => blueprintData,
+          scheduleEditorRebuild,
+          pushEditorHistory,
+          clearJunctionMode,
+          updateDraftMarkers,
+          updateEditorStatus,
+          addPolygonFromDraft,
+          addPolylineFromDraft,
+          deleteSelection,
+          undoEditor,
+          redoEditor
+        });
+      }
+      return editorInputRouter;
+    }
+
+    function ensureGestures() {
+      if (!editorGestures) {
+        editorGestures = createEditorGestures({
+          document,
+          window,
+          renderer,
+          getViewMode: () => viewMode,
+          perspCamera,
+          controls
+        });
+      }
+      return editorGestures;
+    }
+
+    function cloneBlueprintData(data) {
+      return ensureEditorHistoryManager().cloneBlueprintData(data);
     }
 
     function snapshotEditorState() {
-      return {
-        blueprint: cloneBlueprintData(blueprintData),
-        selected: editorState.selected ? { ...editorState.selected } : null
-      };
+      return ensureEditorHistoryManager().snapshotEditorState();
     }
 
     function pushEditorHistory(snapshot) {
-      if (!snapshot) return;
-      editorHistory.undo.push(snapshot);
-      if (editorHistory.undo.length > editorHistory.limit) {
-        editorHistory.undo.shift();
-      }
-      editorHistory.redo = [];
+      return ensureEditorHistoryManager().pushEditorHistory(snapshot);
     }
 
     function applyEditorSnapshot(snapshot, label) {
-      blueprintData = normalizeBlueprintData(snapshot?.blueprint || {});
-      editorState.draft = [];
-      editorState.previewPoint = null;
-      clearJunctionMode();
-      editorState.hover = null;
-      editorState.hoverDraftIndex = null;
-      if (snapshot?.selected &&
-        blueprintData?.[snapshot.selected.layer]?.[snapshot.selected.index]) {
-        editorState.selected = { ...snapshot.selected };
-      } else {
-        editorState.selected = null;
-      }
-      buildBlueprintFromData(blueprintData);
-      rebuildBlueprintCity();
-      updateDraftLine();
-      updateDraftMarkers();
-      updateSelectionMarkers();
-      updateEditorStatus(label || 'History applied.');
+      return ensureEditorHistoryManager().applyEditorSnapshot(snapshot, label);
     }
 
     function undoEditor() {
-      if (editorHistory.undo.length === 0) {
-        updateEditorStatus('Undo: nothing to undo.');
-        return;
-      }
-      const current = snapshotEditorState();
-      const snapshot = editorHistory.undo.pop();
-      editorHistory.redo.push(current);
-      applyEditorSnapshot(snapshot, 'Undo.');
+      return ensureEditorHistoryManager().undoEditor();
     }
 
     function redoEditor() {
-      if (editorHistory.redo.length === 0) {
-        updateEditorStatus('Redo: nothing to redo.');
-        return;
-      }
-      const current = snapshotEditorState();
-      const snapshot = editorHistory.redo.pop();
-      editorHistory.undo.push(current);
-      applyEditorSnapshot(snapshot, 'Redo.');
+      return ensureEditorHistoryManager().redoEditor();
     }
 
     function findNearestDraftVertex(point, threshold) {
@@ -7242,21 +6626,6 @@ function getRoadLineStyle(type) {
         }
       });
       return best;
-    }
-
-    function distancePointToSegment(point, a, b) {
-      const abx = b[0] - a[0];
-      const abz = b[1] - a[1];
-      const apx = point.x - a[0];
-      const apz = point.z - a[1];
-      const abLen2 = abx * abx + abz * abz;
-      const t = abLen2 === 0 ? 0 : (apx * abx + apz * abz) / abLen2;
-      const clamped = Math.max(0, Math.min(1, t));
-      const cx = a[0] + abx * clamped;
-      const cz = a[1] + abz * clamped;
-      const dx = point.x - cx;
-      const dz = point.z - cz;
-      return { dist2: dx * dx + dz * dz, closest: { x: cx, z: cz }, t, tClamped: clamped };
     }
 
     function findNearestEdge(point, threshold) {
@@ -7546,7 +6915,7 @@ function getRoadLineStyle(type) {
     }
 
     function addPolygonFromDraft() {
-      if (!blueprintData) blueprintData = normalizeBlueprintData({});
+      if (!blueprintData) blueprintData = blueprintModel.createBlank();
       if (editorState.draft.length < 3) return;
 
       pushEditorHistory(snapshotEditorState());
@@ -7554,17 +6923,17 @@ function getRoadLineStyle(type) {
       const polygon = editorState.draft.map(p => [p[0], p[1]]);
 
       if (editorState.targetLayer === 'zones') {
-        blueprintData.zones.push({ id, typeCode: editorState.typeCode, polygon, curves: [] });
+        blueprintModel.addFeature('zones', { id, typeCode: editorState.typeCode, polygon, curves: [] });
       } else if (editorState.targetLayer === 'buildings') {
-        blueprintData.buildings.push({ id, typeCode: editorState.typeCode, polygon, curves: [] });
+        blueprintModel.addFeature('buildings', { id, typeCode: editorState.typeCode, polygon, curves: [] });
       } else if (editorState.targetLayer === 'roads') {
-        blueprintData.roads.push({ id, polygon, curves: [] });
+        blueprintModel.addFeature('roads', { id, polygon, curves: [] });
       } else if (editorState.targetLayer === 'coastlines') {
-        blueprintData.coastlines.push({ id, polygon, curves: [] });
+        blueprintModel.addFeature('coastlines', { id, polygon, curves: [] });
       } else if (editorState.targetLayer === 'beaches') {
-        blueprintData.beaches.push({ id, polygon, curves: [] });
+        blueprintModel.addFeature('beaches', { id, polygon, curves: [] });
       } else if (editorState.targetLayer === 'sea') {
-        blueprintData.sea.push({ id, polygon, curves: [] });
+        blueprintModel.addFeature('sea', { id, polygon, curves: [] });
       }
 
       editorState.draft = [];
@@ -7579,7 +6948,7 @@ function getRoadLineStyle(type) {
     }
 
     function addPolylineFromDraft() {
-      if (!blueprintData) blueprintData = normalizeBlueprintData({});
+      if (!blueprintData) blueprintData = blueprintModel.createBlank();
       if (editorState.draft.length < 2) return;
       pushEditorHistory(snapshotEditorState());
       const polyline = editorState.draft.map(p => [p[0], p[1]]);
@@ -7587,7 +6956,7 @@ function getRoadLineStyle(type) {
       const id = `line-${Date.now()}`;
       const style = getRoadLineStyle(lineType);
       const width = style?.width ?? (TRANSIT_STYLES[lineType]?.radius ? TRANSIT_STYLES[lineType].radius * 2 : 8);
-      blueprintData.roads.push({
+      blueprintModel.addFeature('roads', {
         id,
         kind: lineType,
         type: lineType,
@@ -7647,251 +7016,11 @@ function getRoadLineStyle(type) {
     }
 
     function addPoiAt(point) {
-      if (!blueprintData) blueprintData = normalizeBlueprintData({});
-      pushEditorHistory(snapshotEditorState());
-      const id = `poi-${Date.now()}`;
-      blueprintData.pois.push({ id, type: editorState.poiType, position: [point.x, point.z] });
-      buildBlueprintFromData(blueprintData);
-      rebuildBlueprintCity();
-      updateEditorStatus('POI added.');
+      return ensureEditorController().addPoiAt(point);
     }
 
     function setupEditorControls() {
-      const enableToggle = document.getElementById('editorEnable');
-      const undoBtn = document.getElementById('editorUndo');
-      const redoBtn = document.getElementById('editorRedo');
-      const toolSelect = document.getElementById('editorTool');
-      const layerSelect = document.getElementById('editorLayer');
-      const typeSelect = document.getElementById('editorTypeCode');
-      const poiSelect = document.getElementById('editorPoiType');
-      const transitSelect = document.getElementById('editorTransitType');
-      const junctionToggle = document.getElementById('editorJunctionMode');
-      const junctionSplitToggle = document.getElementById('editorJunctionAutoSplit');
-      const debugOffsetsToggle = document.getElementById('editorDebugRoadOffsets');
-      const trafficCarSlider = document.getElementById('trafficCarCount');
-      const trafficCarValue = document.getElementById('trafficCarCountValue');
-      const trafficSpeedSlider = document.getElementById('trafficSpeed');
-      const trafficSpeedValue = document.getElementById('trafficSpeedValue');
-      const heightRange = document.getElementById('editorHeightRange');
-      const heightValue = document.getElementById('editorHeightValue');
-      const heightApply = document.getElementById('editorHeightApply');
-      const snapGridToggle = document.getElementById('editorSnapGrid');
-      const snapPixelToggle = document.getElementById('editorSnapPixels');
-      const pixelStepInput = document.getElementById('editorPixelStep');
-      const zoomSlider = document.getElementById('editorZoom');
-      const zoomValue = document.getElementById('editorZoomValue');
-      const handleScaleSlider = document.getElementById('editorHandleScale');
-      const handleScaleValue = document.getElementById('editorHandleScaleValue');
-      const deleteBtn = document.getElementById('editorDelete');
-      const clearBtn = document.getElementById('editorClear');
-      const hideCityToggle = document.getElementById('editorHideCity');
-
-      if (!enableToggle) return;
-
-      enableToggle.checked = editorState.enabled;
-      enableToggle.addEventListener('change', (e) => {
-        editorState.enabled = !!e.target.checked;
-        ensureEditorGroups();
-        if (editorGroup) editorGroup.visible = editorState.enabled && viewMode === 'fidelity';
-        if (editorState.enabled && viewMode !== 'fidelity') {
-          updateEditorStatus('Editor enabled (switch to Fidelity Mode).');
-        } else {
-          updateEditorStatus(editorState.enabled ? 'Editor enabled.' : 'Editor disabled.');
-        }
-        updateEditorUIState();
-      });
-
-      if (undoBtn) undoBtn.addEventListener('click', undoEditor);
-      if (redoBtn) redoBtn.addEventListener('click', redoEditor);
-
-      if (toolSelect) {
-        toolSelect.addEventListener('change', (e) => {
-          editorState.tool = e.target.value;
-      if (editorState.tool === 'polygon' || editorState.tool === 'polyline') {
-        editorState.selected = null;
-        updateSelectionMarkers();
-      }
-      if (editorState.tool !== 'polygon' && editorState.tool !== 'polyline') {
-        editorState.draft = [];
-        editorState.previewPoint = null;
-        updateDraftLine();
-      }
-      clearJunctionMode();
-          updateEditorUIState();
-          updateDraftMarkers();
-          updateEditorStatus(`Tool: ${editorState.tool}`);
-        });
-      }
-
-      if (layerSelect) {
-        layerSelect.addEventListener('change', (e) => {
-          editorState.targetLayer = e.target.value;
-          if (editorState.targetLayer === 'transit') {
-            editorState.tool = 'polyline';
-          }
-          updateEditorUIState();
-          updateDraftLine();
-          updateDraftMarkers();
-        });
-      }
-
-      if (typeSelect) {
-        typeSelect.addEventListener('change', (e) => {
-          editorState.typeCode = e.target.value;
-          updateDraftLine();
-          updateSelectionMarkers();
-        });
-      }
-
-      if (poiSelect) {
-        poiSelect.addEventListener('change', (e) => {
-          editorState.poiType = e.target.value;
-        });
-      }
-
-      if (transitSelect) {
-        transitSelect.addEventListener('change', (e) => {
-          editorState.transitType = e.target.value;
-          updateDraftLine();
-          updateSelectionMarkers();
-        });
-      }
-
-      if (junctionToggle) {
-        junctionToggle.checked = editorState.junctionInsertMode;
-        junctionToggle.addEventListener('change', (e) => {
-          editorState.junctionInsertMode = !!e.target.checked;
-          updateEditorStatus(editorState.junctionInsertMode ? 'Junction mode enabled.' : 'Junction mode disabled.');
-        });
-      }
-      if (junctionSplitToggle) {
-        junctionSplitToggle.checked = editorState.junctionAutoSplit;
-        junctionSplitToggle.addEventListener('change', (e) => {
-          editorState.junctionAutoSplit = !!e.target.checked;
-        });
-      }
-      if (debugOffsetsToggle) {
-        debugOffsetsToggle.checked = editorState.debugRoadOffsets;
-        debugOffsetsToggle.addEventListener('change', (e) => {
-          editorState.debugRoadOffsets = !!e.target.checked;
-          buildBlueprintFromData(blueprintData || normalizeBlueprintData({}));
-        });
-      }
-
-      const bindTrafficNumber = (slider, input, onChange) => {
-        if (!slider || !input) return;
-        const apply = (value) => {
-          slider.value = value;
-          input.value = value;
-          onChange(value);
-        };
-        slider.addEventListener('input', (e) => apply(e.target.value));
-        input.addEventListener('input', (e) => apply(e.target.value));
-      };
-
-      bindTrafficNumber(trafficCarSlider, trafficCarValue, (value) => {
-        trafficRuntime.maxCars = Math.max(0, Math.min(40, Number.parseInt(value, 10) || 0));
-        rebuildBlueprintTraffic();
-      });
-
-      bindTrafficNumber(trafficSpeedSlider, trafficSpeedValue, (value) => {
-        trafficRuntime.speedScale = Math.max(0.2, Math.min(3, Number.parseFloat(value) || 1));
-      });
-
-      if (heightRange && heightValue) {
-        heightRange.addEventListener('input', (e) => {
-          heightValue.value = e.target.value;
-        });
-        heightValue.addEventListener('input', (e) => {
-          heightRange.value = e.target.value;
-        });
-      }
-
-      if (heightApply) {
-        heightApply.addEventListener('click', () => {
-          const selected = getSelectedEntry();
-          if (!selected || selected.layer !== 'buildings') return;
-          const info = getLegendInfo(selected.entry.typeCode);
-          if (!info.buildable) return;
-          const height = Math.max(0, Math.min(2000, Number.parseFloat(heightValue?.value)));
-          if (!Number.isFinite(height)) return;
-          pushEditorHistory(snapshotEditorState());
-          selected.entry.height = height;
-          selected.entry.heightMeters = height;
-          buildBlueprintFromData(blueprintData);
-          rebuildBlueprintCity();
-          updateSelectionMarkers();
-          updateEditorStatus(`Height set to ${Math.round(height)}m.`);
-        });
-      }
-
-      if (snapGridToggle) {
-        snapGridToggle.addEventListener('change', (e) => {
-          editorState.snapGrid = !!e.target.checked;
-        });
-      }
-
-      if (snapPixelToggle) {
-        snapPixelToggle.addEventListener('change', (e) => {
-          editorState.snapPixels = !!e.target.checked;
-        });
-      }
-
-      if (pixelStepInput) {
-        pixelStepInput.addEventListener('input', (e) => {
-          editorState.pixelStep = Number.parseFloat(e.target.value) || 1;
-        });
-      }
-
-      const bindLinkedNumber = (slider, input, onChange) => {
-        if (!slider || !input) return;
-        const apply = (value) => {
-          slider.value = value;
-          input.value = value;
-          onChange(value);
-        };
-        slider.addEventListener('input', (e) => apply(e.target.value));
-        input.addEventListener('input', (e) => apply(e.target.value));
-      };
-
-      bindLinkedNumber(zoomSlider, zoomValue, (value) => applyEditorZoom(value));
-      bindLinkedNumber(handleScaleSlider, handleScaleValue, (value) => applyHandleScale(value));
-
-      if (deleteBtn) deleteBtn.addEventListener('click', deleteSelection);
-
-      if (clearBtn) {
-        clearBtn.addEventListener('click', () => {
-          pushEditorHistory(snapshotEditorState());
-          blueprintData = normalizeBlueprintData({});
-          editorState.draft = [];
-          editorState.previewPoint = null;
-          clearJunctionMode();
-          editorState.selected = null;
-          editorState.hover = null;
-          editorState.hoverDraftIndex = null;
-          buildBlueprintFromData(blueprintData);
-          rebuildBlueprintCity();
-          updateDraftLine();
-          updateDraftMarkers();
-          updateSelectionMarkers();
-          hideEditorLines();
-          updateEditorStatus('Cleared all blueprint shapes.');
-          setBlueprintStatus('Blueprint status: cleared in memory.');
-        });
-      }
-
-      if (hideCityToggle) {
-        hideCityToggle.checked = editorState.hideCity;
-        hideCityToggle.addEventListener('change', (e) => {
-          editorState.hideCity = !!e.target.checked;
-          setCityLayerVisibility();
-        });
-      }
-
-      updateDraftMarkers();
-      updateEditorUIState();
-      applyEditorZoom(editorState.mapZoom);
-      applyHandleScale(editorState.handleScale);
+      return ensureEditorController().setupEditorControls();
     }
 
     function clearJunctionMode() {
@@ -8317,398 +7446,38 @@ function getRoadLineStyle(type) {
     }
 
     function bindEditorEvents() {
-      renderer.domElement.style.touchAction = 'none';
-      renderer.domElement.addEventListener('pointerdown', (e) => {
-        if (!editorActive()) return;
-        if (e.button !== 0) return;
-
-        if (activeCamera === orthoCamera && e.pointerType === 'touch') {
-          panState.touchPoints.set(e.pointerId, { x: e.clientX, y: e.clientY });
-          if (panState.touchPoints.size >= 2 && canPanMap()) {
-            panState.active = true;
-            panState.isTouch = true;
-            panState.pending = false;
-            const pts = Array.from(panState.touchPoints.values());
-            panState.lastX = (pts[0].x + pts[1].x) / 2;
-            panState.lastY = (pts[0].y + pts[1].y) / 2;
-            renderer.domElement.setPointerCapture(e.pointerId);
-            return;
-          }
-        }
-
-        const mapPoint = getPointerMapPoint(e);
-        if (!mapPoint) return;
-        const snapped = snapMapPoint(mapPoint);
-        const mode = getEditorMode();
-        const doubleClick = isDoubleClick(snapped);
-
-        const canMousePan = (activeCamera === orthoCamera && canPanMap() && e.pointerType === 'mouse');
-        let immediateDrag = false;
-        if (mode === 'draw-polygon' || mode === 'draw-polyline') {
-          immediateDrag = !!findNearestDraftVertex(snapped, 10);
-        } else if (mode === 'edit') {
-          const selected = getSelectedEntry();
-          if (selected) {
-            immediateDrag = !!findNearestVertexInEntry(selected.entry, snapped, 10);
-            if (!immediateDrag) immediateDrag = !!findNearestEdgeInEntry(selected.entry, snapped, 12);
-            if (!immediateDrag && selected.entry.polygon) {
-              immediateDrag = pointInPolygon(snapped.x, snapped.z, selected.entry.polygon);
-            }
-          }
-        } else if (mode === 'select') {
-          immediateDrag = !!findNearestVertex(snapped, 12);
-        }
-
-        if (canMousePan && !immediateDrag) {
-          panState.pending = true;
-          panState.active = false;
-          panState.isTouch = false;
-          panState.pointerId = e.pointerId;
-          panState.lastX = e.clientX;
-          panState.lastY = e.clientY;
-          panState.deferredAction = { snapped, mapPoint, mode, doubleClick };
-          renderer.domElement.setPointerCapture(e.pointerId);
-          return;
-        }
-
-        handleEditorPointerDown(snapped, mapPoint, mode, doubleClick);
-      });
-
-      renderer.domElement.addEventListener('pointermove', (e) => {
-        if (!editorActive()) return;
-
-        if (activeCamera === orthoCamera && e.pointerType === 'touch') {
-          if (panState.touchPoints.has(e.pointerId)) {
-            panState.touchPoints.set(e.pointerId, { x: e.clientX, y: e.clientY });
-          }
-          if (panState.active && panState.isTouch && panState.touchPoints.size >= 2) {
-            const pts = Array.from(panState.touchPoints.values());
-            const cx = (pts[0].x + pts[1].x) / 2;
-            const cy = (pts[0].y + pts[1].y) / 2;
-            const dx = cx - panState.lastX;
-            const dy = cy - panState.lastY;
-            panState.lastX = cx;
-            panState.lastY = cy;
-            applyPanDelta(dx, dy);
-            return;
-          }
-        }
-
-        if (panState.pending && e.pointerType === 'mouse' && e.pointerId === panState.pointerId) {
-          const dx = e.clientX - panState.lastX;
-          const dy = e.clientY - panState.lastY;
-          if (Math.hypot(dx, dy) > 3) {
-            panState.active = true;
-            panState.pending = false;
-          }
-        }
-        if (panState.active && !panState.isTouch && e.pointerId === panState.pointerId) {
-          const dx = e.clientX - panState.lastX;
-          const dy = e.clientY - panState.lastY;
-          panState.lastX = e.clientX;
-          panState.lastY = e.clientY;
-          applyPanDelta(dx, dy);
-          return;
-        }
-
-        const mapPoint = getPointerMapPoint(e);
-        if (!mapPoint) return;
-        const snapped = snapMapPoint(mapPoint);
-        const mode = getEditorMode();
-
-        if (!editorState.dragging) {
-        if (mode === 'draw-polygon' || mode === 'draw-polyline') {
-          if (editorState.draft.length > 0) {
-            if (mode === 'draw-polyline') {
-                const endpointHit = findNearestLineEndpoint(mapPoint, getEditorHitRadius(16));
-                const vertexHit = findNearestLineVertex(mapPoint, getEditorHitRadius(16));
-                const edgeHit = findNearestLineEdge(mapPoint, getEditorHitRadius(12));
-                const draftStart = editorState.draft[0];
-                const dxStart = draftStart ? (mapPoint.x - draftStart[0]) : 0;
-                const dzStart = draftStart ? (mapPoint.z - draftStart[1]) : 0;
-                const closeStart = draftStart && (dxStart * dxStart + dzStart * dzStart) <= getEditorHitRadius(14) * getEditorHitRadius(14);
-                if (closeStart) {
-                  editorState.previewPoint = [draftStart[0], draftStart[1]];
-                } else if (vertexHit) {
-                  editorState.previewPoint = [vertexHit.point[0], vertexHit.point[1]];
-                } else if (endpointHit) {
-                  editorState.previewPoint = [endpointHit.point[0], endpointHit.point[1]];
-                } else if (edgeHit) {
-                  editorState.previewPoint = [edgeHit.point.x, edgeHit.point.z];
-                } else {
-                  editorState.previewPoint = [snapped.x, snapped.z];
-                }
-              } else {
-                editorState.previewPoint = [snapped.x, snapped.z];
-              }
-            } else {
-              editorState.previewPoint = null;
-            }
-            updateDraftLine();
-          }
-          updateEditorHover(snapped);
-          return;
-        }
-
-        if (editorState.dragging.mode === 'draft') {
-          const idx = editorState.dragging.index;
-          if (editorState.draft[idx]) {
-            editorState.draft[idx] = [snapped.x, snapped.z];
-            updateDraftLine();
-            updateDraftMarkers();
-          }
-          return;
-        }
-
-        if (!editorState.selected) return;
-        const { layer, index, vertexIndex } = editorState.selected;
-        const list = blueprintData?.[layer];
-        if (!list || !list[index]) return;
-        const entry = list[index];
-
-        if (editorState.dragging.mode === 'vertex' && vertexIndex !== null) {
-          let target = snapped;
-          if (entry.polyline) {
-            const endpointHit = findNearestLineEndpoint(mapPoint, getEditorHitRadius(14));
-            if (endpointHit &&
-              !(endpointHit.index === index && endpointHit.vertexIndex === vertexIndex)) {
-              target = { x: endpointHit.point[0], z: endpointHit.point[1] };
-            }
-          }
-          if (entry.polyline) {
-            entry.polyline[vertexIndex] = [target.x, target.z];
-          } else if (entry.polygon) {
-            entry.polygon[vertexIndex] = [target.x, target.z];
-          }
-          editorState.dragging.didMove = true;
-        } else if (editorState.dragging.mode === 'polygon' && editorState.dragging.original) {
-          const dx = snapped.x - editorState.dragging.start.x;
-          const dz = snapped.z - editorState.dragging.start.z;
-          const moved = editorState.dragging.original.map(p => [p[0] + dx, p[1] + dz]);
-          if (editorState.dragging.isPolyline) {
-            entry.polyline = moved;
-          } else {
-            entry.polygon = moved;
-            if (Array.isArray(entry.curves)) {
-              entry.curves = editorState.dragging.curves || entry.curves;
-            }
-          }
-          editorState.dragging.didMove = true;
-        }
-        scheduleEditorRebuild();
-      });
-
-      renderer.domElement.addEventListener('pointerup', (e) => {
-        if (e.pointerType === 'touch') {
-          panState.touchPoints.delete(e.pointerId);
-          if (panState.touchPoints.size < 2) {
-            panState.active = false;
-            panState.isTouch = false;
-          }
-        }
-        if (panState.pending && e.pointerId === panState.pointerId) {
-          panState.pending = false;
-          panState.active = false;
-          panState.pointerId = null;
-          const deferred = panState.deferredAction;
-          panState.deferredAction = null;
-          if (deferred) {
-            handleEditorPointerDown(deferred.snapped, deferred.mapPoint, deferred.mode, deferred.doubleClick);
-          }
-        }
-        if (panState.active && !panState.isTouch && e.pointerId === panState.pointerId) {
-          panState.active = false;
-          panState.pointerId = null;
-        }
-        if (editorState.dragging?.historySnapshot &&
-          editorState.dragging.didMove &&
-          !editorState.dragging.historyPushed) {
-          pushEditorHistory(editorState.dragging.historySnapshot);
-        }
-        if (editorState.dragging?.didMove) {
-          scheduleEditorRebuild();
-        }
-        editorState.dragging = null;
-      });
-
-      renderer.domElement.addEventListener('pointercancel', (e) => {
-        if (e.pointerType === 'touch') {
-          panState.touchPoints.delete(e.pointerId);
-          if (panState.touchPoints.size < 2) {
-            panState.active = false;
-            panState.isTouch = false;
-          }
-        }
-        if (panState.pointerId === e.pointerId) {
-          panState.pending = false;
-          panState.active = false;
-          panState.pointerId = null;
-          panState.deferredAction = null;
-        }
-      });
-
-      window.addEventListener('keydown', (e) => {
-        if (!editorActive()) return;
-        const activeEl = document.activeElement;
-        const isTextInput = activeEl &&
-          (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.isContentEditable);
-        if (!isTextInput && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
-          e.preventDefault();
-          if (e.shiftKey) {
-            redoEditor();
-          } else {
-            undoEditor();
-          }
-          return;
-        }
-        if (!isTextInput && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
-          e.preventDefault();
-          redoEditor();
-          return;
-        }
-        if (e.key === 'Enter') {
-          if (editorState.tool === 'polygon') addPolygonFromDraft();
-          if (editorState.tool === 'polyline') addPolylineFromDraft();
-        } else if (e.key === 'Escape') {
-          editorState.draft = [];
-          editorState.previewPoint = null;
-          clearJunctionMode();
-          updateDraftLine();
-          updateDraftMarkers();
-          updateEditorStatus('Draft cancelled.');
-        } else if (e.key === 'Delete' || e.key === 'Backspace') {
-          const mode = getEditorMode();
-          if (mode === 'draw-polygon' || mode === 'draw-polyline') {
-            if (editorState.draft.length > 0) {
-              if (editorState.hoverDraftIndex !== null) {
-                editorState.draft.splice(editorState.hoverDraftIndex, 1);
-                editorState.hoverDraftIndex = null;
-              } else {
-                editorState.draft.pop();
-              }
-              editorState.previewPoint = null;
-              if (editorState.draft.length === 0) {
-                clearJunctionMode();
-              }
-              updateDraftLine();
-              updateDraftMarkers();
-              updateEditorStatus(`Draft points: ${editorState.draft.length}`);
-            }
-          } else {
-            deleteSelection();
-          }
-        }
-      });
+      ensureEditorInputRouter().bindEditorEvents();
     }
     
     // ============================================
 // ANIMATION LOOP
     // ============================================
     
-    let lastT = performance.now();
-    
-    function animate() {
-      requestAnimationFrame(animate);
-      
-      const now = performance.now();
-      const isRealtime = (viewMode === '3d' || viewMode === 'street');
-      const targetFps = isRealtime
-        ? (animationEnabled ? RENDER_FPS.realtime : RENDER_FPS.realtimeIdle)
-        : (animationEnabled ? RENDER_FPS.idle : RENDER_FPS.idleNoAnim);
-      const minFrameMs = 1000 / targetFps;
-      if (now - lastRenderTime < minFrameMs) return;
-      lastRenderTime = now;
-      const dt = Math.min(0.05, (now - lastT) / 1000);
-      lastT = now;
-      const time = now * 0.001;
-      
-      const animActive = animationEnabled && isRealtime;
-
-      // Keyboard movement (3D + street)
-      if (viewMode === '3d' || viewMode === 'street') {
-        let dx = 0, dz = 0;
-        if (keyState.ArrowLeft) dx -= 1;
-        if (keyState.ArrowRight) dx += 1;
-        if (keyState.ArrowUp) dz -= 1;
-        if (keyState.ArrowDown) dz += 1;
-        
-        if (dx || dz) {
-          const len = Math.hypot(dx, dz) || 1;
-          dx /= len; dz /= len;
-          
-          const speed = 220; // world units/sec
-          const yaw = controls.getAzimuthalAngle();
-          const cos = Math.cos(yaw), sin = Math.sin(yaw);
-          
-          const mx = (dx * cos - dz * sin) * speed * dt;
-          const mz = (dx * sin + dz * cos) * speed * dt;
-          
-          perspCamera.position.x += mx;
-          perspCamera.position.z += mz;
-          controls.target.x += mx;
-          controls.target.z += mz;
-        }
-      }
-      
-      if (animActive) {
-        // Animate water
-        animateWater(time);
-        
-        // Animate cars
-        animateCars();
-        animateBlueprintTraffic(dt);
-        
-        // Animate windmills (using cached reference)
-        if (windmillsGroup) {
-          windmillsGroup.children.forEach(windmill => {
-            if (windmill.userData.blades) {
-              windmill.userData.blades.rotation.z =
-                time * windmill.userData.rotationSpeed * 10 + windmill.userData.rotationOffset;
-            }
-          });
-        }
-        
-        // Animate Ferris wheel (using cached reference)
-        if (ferrisWheelRef && ferrisWheelRef.userData.wheel) {
-          ferrisWheelRef.userData.wheel.rotation.y += 0.003;
-          // Keep cabins upright
-          ferrisWheelRef.userData.wheel.children.forEach(child => {
-            if (child.userData.baseAngle !== undefined) {
-              child.rotation.x = -ferrisWheelRef.userData.wheel.rotation.y;
-            }
-          });
-        }
-        
-        // Blink aircraft warning lights
-        warningLights.forEach(obj => {
-          const blink = Math.sin(time * 3) > 0;
-          obj.material.emissiveIntensity = blink ? 2 : 0.2;
-        });
-        // Cinema marquee lights twinkle
-        marqueeLights.forEach(obj => {
-          const twinkle = Math.sin(time * 5 + obj.position.x) > 0.3;
-          obj.material.emissiveIntensity = twinkle ? 1 : 0.3;
-        });
-      }
-      
-      // Update controls
-      if (controls.enabled) {
-        controls.update();
-      }
-      
-      renderer.render(scene, activeCamera);
-    }
+    const renderLoop = createRenderLoop({
+      renderer,
+      scene,
+      cameras: {
+        perspCamera,
+        getActiveCamera: () => activeCamera
+      },
+      controls,
+      getViewMode: () => viewMode,
+      getAnimationEnabled: () => animationEnabled,
+      renderFps: RENDER_FPS,
+      keyState,
+      animateWater,
+      animateCars,
+      animateBlueprintTraffic,
+      getWindmillsGroup: () => windmillsGroup,
+      getFerrisWheelRef: () => ferrisWheelRef,
+      warningLights,
+      marqueeLights,
+      getPerfLogging: () => PERF_LOGGING
+    });
     
     // Start
     init();
-    animate();
-    
-    // Optional: Performance monitoring (logs draw calls and triangles)
-    if (PERF_LOGGING) {
-      setInterval(() => {
-        console.log("drawCalls:", renderer.info.render.calls, "tris:", renderer.info.render.triangles);
-      }, 1000);
-    }
+    renderLoop.start();
     
   </script>
 </body>
