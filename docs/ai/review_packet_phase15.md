@@ -85,7 +85,7 @@ index 4f8f298..f916bb4 100644
  - overlayDrift: { ok: true, epsPx: 0.05, maxDriftPx: 0 }
  - rendererInfo: { memory: { geometries: 436, textures: 3 }, render: { calls: 626, triangles: 22614, lines: 0, points: 0 } }
  - parity_decision: PASS (tracked fields unchanged and drift within epsPx=0.05)
- 
+
  ## Phase 14 – Scanner Questions Decisions (docs)
 @@
  - packet_commit: dcd04c1
@@ -206,5 +206,5 @@ Optional:
 ### `git diff --check --cached`
 ```text
 docs/ai/review_packet_phase15.md:88: trailing whitespace.
-+ 
++
 ```

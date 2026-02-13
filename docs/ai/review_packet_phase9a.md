@@ -70,9 +70,9 @@ index fe6a1b0..2773ab0 100644
 --- a/REFACTOR_LOG.md
 +++ b/REFACTOR_LOG.md
 @@ -229,15 +229,30 @@ Probe check (post-extraction):
- 
+
  ## Phase 8 – TrafficSystem extraction
- 
+
  - branch: refactor/phase8-traffic-system
  - base_commit: 84bc767
  - phase_end_commit: aa5b414
@@ -122,12 +122,12 @@ index ba4d9b8..05784be 100644
      import { createEditorGestures } from './src/editor/Gestures.js';
 +    import { createPanelManager } from './src/ui/PanelManager.js';
 +    import { createTrafficPanel } from './src/ui/panels/TrafficPanel.js';
-     
+
      // ============================================
      // CONFIGURATION
      // ============================================
-     
-     
+
+
      // ============================================
      // SCENE SETUP
      // ============================================
@@ -142,7 +142,7 @@ index ba4d9b8..05784be 100644
    redo: [],
    limit: 80
  };
- 
+
  let blueprintCityEnabled = false;
  let blueprintZoneMeshes = [];
    let blueprintLabelGroup = null;
@@ -156,12 +156,12 @@ index ba4d9b8..05784be 100644
 +  let panelManager = null;
 +  let trafficPanel = null;
    let trafficSystem = null;
- 
+
  const blueprintPreviewSettings = {
    opacity: 1,
    showLabels: false
  };
- 
+
  const panState = {
    active: false,
    pending: false,
@@ -197,7 +197,7 @@ index ba4d9b8..05784be 100644
 +      syncTrafficPanel();
        updateEditorHeightControls();
      }
- 
+
      function updateEditorHeightControls() {
        const heightRange = document.getElementById('editorHeightRange');
        const heightValue = document.getElementById('editorHeightValue');
@@ -225,7 +225,7 @@ index ba4d9b8..05784be 100644
        }
        return editorHistoryManager;
      }
- 
+
 +    function ensurePanelManager() {
 +      if (!panelManager) {
 +        trafficPanel = createTrafficPanel({
@@ -315,7 +315,7 @@ index ba4d9b8..05784be 100644
        }
        return editorController;
      }
- 
+
      function ensureEditorInputRouter() {
        if (!editorInputRouter) {
          editorInputRouter = createEditorInputRouter({
@@ -529,25 +529,25 @@ export function createTrafficPanel({ doc = document, actions = {}, state = {} } 
 ### git diff --check --cached
 ```bash
 docs/ai/review_packet_phase9a.md:73: trailing whitespace.
-+ 
++
 docs/ai/review_packet_phase9a.md:75: trailing whitespace.
-+ 
++
 docs/ai/review_packet_phase9a.md:125: trailing whitespace.
-+     
++
 docs/ai/review_packet_phase9a.md:129: trailing whitespace.
-+     
++
 docs/ai/review_packet_phase9a.md:130: trailing whitespace.
-+     
++
 docs/ai/review_packet_phase9a.md:145: trailing whitespace.
-+ 
++
 docs/ai/review_packet_phase9a.md:159: trailing whitespace.
-+ 
++
 docs/ai/review_packet_phase9a.md:164: trailing whitespace.
-+ 
++
 docs/ai/review_packet_phase9a.md:200: trailing whitespace.
-+ 
++
 docs/ai/review_packet_phase9a.md:228: trailing whitespace.
-+ 
++
 docs/ai/review_packet_phase9a.md:318: trailing whitespace.
-+ 
++
 ```

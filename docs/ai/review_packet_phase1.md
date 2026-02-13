@@ -126,9 +126,9 @@ index 650af3f..50e85de 100644
 +++ b/REFACTOR_LOG.md
 @@ -1,22 +1,21 @@
  # Refactor Log
- 
+
  ## Phase 0 – Baseline
- 
+
  Checklist (from v6):
  - Parity probe (mesh/line/point/group counts + blueprint feature counts)
 -- Seeded RNG baseline (default seed 123456): stable counts for trees/props/lit windows
@@ -143,7 +143,7 @@ index 650af3f..50e85de 100644
  - ViewMode signature (plan→3d→street→fidelity): overlay/editor gating + render throttle targets + props/fx visibility
  - RenderLoop signature (RENDER_FPS table + target FPS per mode)
  - LocalStorage keys report (see docs/LOCALSTORAGE_KEYS.md)
- 
+
  How to run probe:
  1) Start a static server (example):
     ```bash
@@ -158,7 +158,7 @@ index 5f00b54..97f6b3b 100644
        }
      }
    </script>
-   
+
    <script type="module">
      import * as THREE from 'three';
      import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -198,13 +198,13 @@ index 5f00b54..97f6b3b 100644
 +    import { clampNumber, rng } from './src/utils/Math.js';
 +    import { pointInPolygon, centroidNorm, distancePointToSegment } from './src/utils/GeometryMath.js';
 +    import { disposeObject3D } from './src/utils/Dispose.js';
-     
+
      // ============================================
      // CONFIGURATION
      // ============================================
 -    const MAP_WIDTH = 1400;
 -    const MAP_HEIGHT = 1000;
--    
+-
 -    // Map overlay configuration
 -    const MAP_OVERLAY_IMG_W = 1400;
 -    const MAP_OVERLAY_IMG_H = 1000;
@@ -212,11 +212,11 @@ index 5f00b54..97f6b3b 100644
 -    const MAP_OVERLAY_WORLD_H = MAP_HEIGHT;
 -    const GRID_STEP_X = MAP_OVERLAY_WORLD_W / 20;
 -    const GRID_STEP_Z = MAP_OVERLAY_WORLD_H / 20;
--   
+-
 -    const IS_DEV = true; // Set to false for production
--    
+-
 -    const Y = { terrainSea: -2, beach: -1, land: 0, island: 0.5, zones: 1.0, overlay: 1.015, roads: 1.02, buildings: 1.05 };
--    
+-
 -    // Color palette matching MAP.png
 -    const COLORS = {
 -      sea: 0x4a8cb8,
@@ -242,7 +242,7 @@ index 5f00b54..97f6b3b 100644
 -      fairground: 0xc8a878,       // ff - Tan
 -      port: 0x6898b8,             // P - Blue-grey
 -    };
-     
+
 -    // ============================================
 -    // SEEDED RNG FOR DETERMINISTIC GENERATION
 -    // ============================================
@@ -255,7 +255,7 @@ index 5f00b54..97f6b3b 100644
 -      };
 -    }
 -    const rng = mulberry32(123456); // Change seed to regenerate the city
-     
+
      // ============================================
      // SCENE SETUP
      // ============================================
@@ -267,24 +267,24 @@ index 5f00b54..97f6b3b 100644
      renderer.toneMapping = THREE.ACESFilmicToneMapping;
      renderer.toneMappingExposure = 1.0;
      document.body.appendChild(renderer.domElement);
- 
+
  const scene = new THREE.Scene();
- 
+
 @@ -919,49 +898,30 @@ function makeInstanced(geo, mat, matrices) {
    return mesh;
  }
- 
+
  // Cached scene references (avoid getObjectByName every frame)
  let windmillsGroup = null;
  let ferrisWheelRef = null;
- 
+
  // Environment map for reflections
  renderer.outputColorSpace = THREE.SRGBColorSpace;
  const pmrem = new THREE.PMREMGenerator(renderer);
  const envRT = pmrem.fromScene(new RoomEnvironment(), 0.04);
  scene.environment = envRT.texture;
  pmrem.dispose();
- 
+
  // Map overlay and coordinate mapper
 -const OVERLAY_STORAGE_KEY = 'tadhgCityOverlayCalib';
 -const OVERLAY_DEFAULTS = {
@@ -324,7 +324,7 @@ index 5f00b54..97f6b3b 100644
    opacity: 1,
    showLabels: false
  };
- 
+
  const panState = {
    active: false,
    pending: false,
@@ -335,7 +335,7 @@ index 5f00b54..97f6b3b 100644
    deferredAction: null,
    touchPoints: new Map()
  };
- 
+
 -const LEGEND_LINE_COLORS = {
 -  Q: 0xff3b3b,
 -  B: 0xffe85c,
@@ -402,7 +402,7 @@ index 5f00b54..97f6b3b 100644
      buildable: true
    };
  }
- 
+
  function getEntryHeight(entry) {
    if (!entry) return 0;
    if (Number.isFinite(entry.heightMeters)) return entry.heightMeters;
@@ -410,7 +410,7 @@ index 5f00b54..97f6b3b 100644
    const info = getLegendInfo(entry.typeCode);
    return info.height;
  }
- 
+
 -const POI_COLORS = {
 -  METRO_STATION: 0x2f7bff,
 -  TRAIN_STATION: 0xffffff,
@@ -445,12 +445,12 @@ index 5f00b54..97f6b3b 100644
    if (LINE_TYPES.has(raw)) return raw;
    return 'ROAD_MINOR';
  }
- 
+
  function getLineKind(entry) {
    if (!entry) return 'ROAD_MINOR';
    return normalizeLineType(entry.kind ?? entry.type);
  }
- 
+
  function isTransitKind(kind) {
    return TRANSIT_TYPES.has(normalizeLineType(kind));
  }
@@ -462,14 +462,14 @@ index 5f00b54..97f6b3b 100644
      sunLight.shadow.bias = -0.0001;
      sunLight.shadow.normalBias = 0.02;
      scene.add(sunLight);
-     
+
      const hemisphereLight = new THREE.HemisphereLight(0x88ccff, 0x44aa44, 0.3);
      scene.add(hemisphereLight);
-     
+
      // ============================================
  // HELPER FUNCTIONS
      // ============================================
-     
+
 -    // Disposal helper for cleanup
 -    function disposeObject3D(root) {
 -      root.traverse(o => {
@@ -491,7 +491,7 @@ index 5f00b54..97f6b3b 100644
 -    }
 -
      const probeEnabled = new URLSearchParams(location.search).has('refactorProbe');
- 
+
      function exposeDebugState() {
        if (window.__CITYSIM__) return;
        window.__CITYSIM__ = {
@@ -515,12 +515,12 @@ index 5f00b54..97f6b3b 100644
          }
        }
      }
-     
+
      // Convert normalized [0,1] coordinates to world coordinates
      function toWorld(nx, nz) {
        return [(nx - 0.5) * MAP_WIDTH, (0.5 - nz) * MAP_HEIGHT];
      }
-     
+
 -    // Simple point-in-polygon for normalized coords
 -    function pointInPolygon(px, pz, poly) {
 -      let inside = false;
@@ -533,7 +533,7 @@ index 5f00b54..97f6b3b 100644
 -      }
 -      return inside;
 -    }
--    
+-
 -    // Polygon centroid in normalized coordinates
 -    function centroidNorm(points) {
 -      let a = 0, cx = 0, cz = 0;
@@ -553,12 +553,12 @@ index 5f00b54..97f6b3b 100644
 -      }
 -      return [cx / (6 * a), cz / (6 * a)];
 -    }
--    
+-
      function worldCentroid(points) {
        const [nx, nz] = centroidNorm(points);
        return toWorld(nx, nz);
      }
-     
+
      // Create a flat polygon from normalized coordinates
      function createPolygon(points, color, y = 0) {
        const worldPoints = points.map(([nx, nz]) => {
@@ -566,7 +566,7 @@ index 5f00b54..97f6b3b 100644
          // Invert Z when building 2D shapes so they align with toWorld placements
          return new THREE.Vector2(wx, -wz);
        });
-       
+
        const shape = new THREE.Shape(worldPoints);
        const geometry = new THREE.ShapeGeometry(shape);
 @@ -5528,36 +5363,30 @@ function getRoadLineStyle(type) {
@@ -576,11 +576,11 @@ index 5f00b54..97f6b3b 100644
          waterMesh.geometry.computeVertexNormals();
        }
      }
-     
+
      // ============================================
      // UI & CONTROLS
      // ============================================
-     
+
      let isNight = false;
      let fidelityModeActive = false;
      let animationEnabled = true;
@@ -598,12 +598,12 @@ index 5f00b54..97f6b3b 100644
        propsVisible: LAYERS.props.visible,
        fxVisible: LAYERS.fx.visible
      };
- 
+
      function setCityLayerVisibility() {
        const showLegacy = !blueprintCityEnabled && !editorState.hideCity;
        const showBlueprint = blueprintCityEnabled && !editorState.hideCity;
        const showProps = !fidelityModeActive;
- 
+
        LAYERS.terrain.visible = showLegacy;
        LAYERS.zones.visible = showLegacy;
 @@ -7279,45 +7108,30 @@ function getRoadLineStyle(type) {
@@ -621,7 +621,7 @@ index 5f00b54..97f6b3b 100644
        });
        return best;
      }
- 
+
 -    function distancePointToSegment(point, a, b) {
 -      const abx = b[0] - a[0];
 -      const abz = b[1] - a[1];
@@ -1030,13 +1030,13 @@ sed -n '720,820p' city-sim.html
       <button class="btn" id="closeEditorHelp">Close</button>
     </div>
   </div>
-  
+
   <script>
     function toggleMenu() {
       document.getElementById('ui').classList.toggle('hidden');
     }
   </script>
-  
+
   <script type="importmap">
     {
       "imports": {
@@ -1045,7 +1045,7 @@ sed -n '720,820p' city-sim.html
       }
     }
   </script>
-  
+
   <script type="module">
     import * as THREE from 'three';
     import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -1085,12 +1085,12 @@ sed -n '720,820p' city-sim.html
     import { clampNumber, rng } from './src/utils/Math.js';
     import { pointInPolygon, centroidNorm, distancePointToSegment } from './src/utils/GeometryMath.js';
     import { disposeObject3D } from './src/utils/Dispose.js';
-    
+
     // ============================================
     // CONFIGURATION
     // ============================================
-    
-    
+
+
     // ============================================
     // SCENE SETUP
     // ============================================

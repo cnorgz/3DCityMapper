@@ -109,12 +109,12 @@ index 97f6b3b..cd3585b 100644
      import { clampNumber, rng } from './src/utils/Math.js';
      import { pointInPolygon, centroidNorm, distancePointToSegment } from './src/utils/GeometryMath.js';
      import { disposeObject3D } from './src/utils/Dispose.js';
-     
+
      // ============================================
      // CONFIGURATION
      // ============================================
-     
-     
+
+
      // ============================================
      // SCENE SETUP
      // ============================================

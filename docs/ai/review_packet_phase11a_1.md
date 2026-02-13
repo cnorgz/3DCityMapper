@@ -81,9 +81,9 @@ index d506f4a..aec3ea6 100644
 --- a/REFACTOR_LOG.md
 +++ b/REFACTOR_LOG.md
 @@ -376,12 +376,12 @@ Probe check (post-extraction):
- 
+
  ## Phase 11a – Scanner scaffolding placeholder
- 
+
  - branch: refactor/phase11a-scanner-scaffolding
  - base_commit: 8db8050
 -- phase_end_commit: PENDING

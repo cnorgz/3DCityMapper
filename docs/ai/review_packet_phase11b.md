@@ -102,9 +102,9 @@ index aec3ea6..f63483a 100644
 +++ b/REFACTOR_LOG.md
 @@ -375,15 +375,30 @@ Probe check (post-extraction):
  - overlayDrift: { ok: true, epsPx: 0.05, maxDriftPx: 0 }
- 
+
  ## Phase 11a – Scanner scaffolding placeholder
- 
+
  - branch: refactor/phase11a-scanner-scaffolding
  - base_commit: 8db8050
  - phase_end_commit: 31b75b4
@@ -137,7 +137,7 @@ index c75a4a4..d6ed609 100644
 +++ b/city-sim.html
 @@ -1771,37 +1771,55 @@ function validateBlueprint(data) {
      }
- 
+
      function ensureScannerController() {
        if (!scannerController) {
          scannerController = createScannerController({
@@ -185,7 +185,7 @@ index c75a4a4..d6ed609 100644
      }
 @@ -5567,31 +5585,32 @@ function validateBlueprint(data) {
              verifyOverlayMapping();
- 
+
              if (pendingScan) {
                pendingScan = false;
                const scanResult = await ensureScannerController().scanFromOverlay();
@@ -211,7 +211,7 @@ index 7fbaeb7..f505dce 100644
 @@ -6,29 +6,55 @@ export function createScannerController({
  } = {}) {
    let pending = null;
- 
+
    async function scanFromOverlay() {
      if (pending) return pending;
 @@

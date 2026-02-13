@@ -161,4 +161,3 @@ Single-file consolidated review bundle for Phase 11 code slices. Metadata is sou
 
 ```diff
 ```
-

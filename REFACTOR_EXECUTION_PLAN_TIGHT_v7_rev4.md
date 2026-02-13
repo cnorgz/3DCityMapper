@@ -1,6 +1,6 @@
 # 3DCityMapper — Refactor Execution Plan (Codex‑CLI Optimized, Scanner‑Ready) v7
 
-**Date:** Feb 3, 2026  
+**Date:** Feb 3, 2026
 **Scope:** Refactor monolithic `city-sim.html` into a modular architecture with strong guardrails, while laying clean foundations for:
 - user **overlay image upload + calibration**
 - future **auto-scan → DraftBlueprint → BlueprintModel**
@@ -19,9 +19,9 @@
 
 ### 0.1 Primary user journeys (target)
 **A) Scan-first workflow (default new city)**
-1) User uploads a hand-drawn map image (standard legend / graphic ruleset).  
-2) Scanner pipeline produces a DraftBlueprint.  
-3) DraftBlueprint is validated + normalized, then loaded into BlueprintModel.  
+1) User uploads a hand-drawn map image (standard legend / graphic ruleset).
+2) Scanner pipeline produces a DraftBlueprint.
+3) DraftBlueprint is validated + normalized, then loaded into BlueprintModel.
 4) User refines via editor tools (fidelity pass).
 
 **B) Start-from-scratch workflow (supported option)**
@@ -49,14 +49,14 @@ To keep the system stable and deterministic during refactor (and early scanner M
 ## 1) Mission & Non‑Negotiable Invariants ✅
 
 ### 1.1 Coordinate contract (must not drift)
-- Preserve 3-space mapping: **pixel → overlay-local → world**.  
+- Preserve 3-space mapping: **pixel → overlay-local → world**.
 - Overlay mapping must round-trip within **epsPx=0.05** (preserve threshold; do not loosen).
 
 ### 1.2 Render-loop semantics (must not drift)
 - Preserve throttled rendering behavior (mode + animation controlled FPS), not “always render every rAF”.
 
 ### 1.3 One-owner scene graph
-- One canonical creator/owner for scene groups.  
+- One canonical creator/owner for scene groups.
 - No duplicate roots, no shadow scene graphs.
 
 ### 1.4 Shared materials safety
@@ -220,7 +220,7 @@ validate() -> { ok, errors, warnings }
 ```
 
 ### 5.2 CoordinateMapper + OverlayTransform
-- CoordinateMapper: pixel ↔ overlay-local (pure)  
+- CoordinateMapper: pixel ↔ overlay-local (pure)
 - OverlayTransform: overlay-local ↔ world + drift check (epsPx=0.05)
 - Drift probe points must be generated from **current normalized image dims**, not fixed constants.
 
