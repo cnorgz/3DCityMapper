@@ -840,8 +840,8 @@ Probe check (post-extraction):
 
 - branch: refactor/phase12-wrapup-review-simplify
 - base_commit: 206c867
-- phase_end_commit: PENDING
-- packet_commit: PENDING
+- phase_end_commit: 8ff82af
+- packet_commit: fa3a3a9
 - capture_method: codex-mcp (readiness gated)
 - url: http://localhost:8000/city-sim.html?refactorProbe=1
 - json_len: 3978
