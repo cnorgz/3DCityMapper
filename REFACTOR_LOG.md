@@ -689,3 +689,12 @@ Probe check (post-extraction):
 - packet_commit: PENDING
 - capture_method: n/a (docs-only)
 - probe: NOT RUN (docs-only)
+
+### Phase 10i – Phase 10 packet index
+
+- branch: refactor/phase10i-phase10-packet-index
+- base_commit: e0d7111
+- phase_end_commit: PENDING
+- packet_commit: PENDING
+- capture_method: n/a (docs-only)
+- probe: NOT RUN (docs-only)
