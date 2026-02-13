@@ -752,3 +752,12 @@ Probe check (post-extraction):
 - packet_commit: PENDING
 - capture_method: n/a (docs-only)
 - probe: NOT RUN (docs-only)
+
+### Phase 10p – Doc links sanity after root/docs normalization
+
+- branch: refactor/phase10p-doc-links-sanity-2
+- base_commit: 31fbfc5
+- phase_end_commit: PENDING
+- packet_commit: PENDING
+- capture_method: n/a (docs-only)
+- probe: NOT RUN (docs-only)
