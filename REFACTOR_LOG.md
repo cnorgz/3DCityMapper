@@ -658,7 +658,7 @@ Probe check (post-extraction):
 
 - branch: refactor/phase10e-docs-dir-normalize
 - base_commit: b3db947
-- phase_end_commit: PENDING
-- packet_commit: PENDING
+- phase_end_commit: 363b3ce
+- packet_commit: 9b38c37
 - capture_method: n/a (docs-only)
 - probe: NOT RUN (docs-only)
