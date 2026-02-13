@@ -768,8 +768,8 @@ Probe check (post-extraction):
 
 - branch: refactor/phase11u-log-metadata-sweep-10-11
 - base_commit: 5193d35
-- phase_end_commit: PENDING
-- packet_commit: PENDING
+- phase_end_commit: 66c00cc
+- packet_commit: 8ee6584
 - capture_method: n/a (docs-only)
 - probe: NOT RUN (docs-only)
 
@@ -777,9 +777,18 @@ Probe check (post-extraction):
 
 - branch: refactor/phase11v-packet-evidence-bundle-doc
 - base_commit: 8ee6584
+- phase_end_commit: a505b09
+- packet_commit: 90082e5
+- capture_method: n/a (docs-only)
+- probe: NOT RUN (docs-only)
+
+### Phase 11w – External upload bundle + packet compression
+
+- branch: refactor/phase11w-upload-bundle-compress
+- base_commit: 90082e5
 - phase_end_commit: PENDING
 - packet_commit: PENDING
-- capture_method: n/a (docs-only)
+- capture_method: n/a (docs/tooling-only)
 - probe: NOT RUN (docs-only)
 
 ### Phase 10m – Phase 10 packet index refresh

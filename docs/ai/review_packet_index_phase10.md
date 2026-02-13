@@ -1,5 +1,9 @@
 # Phase 10 Review Packet Index
 
+## External Upload Bundle
+- Upload facade: `docs/ai/UPLOAD_BUNDLE_PHASE10-11.md`
+- Optional mega packet: `docs/ai/review_packet_bundle_phase10-11_docs.md`
+
 ## Primary Phase Packets
 - `docs/ai/review_packet_phase10a.md` | branch `refactor/phase10a-architecture-doc` | phase_end `c4a2688` | packet `8147ad0`
 - `docs/ai/review_packet_phase10b.md` | branch `refactor/phase10b-coordinates-doc` | phase_end `a471ae8` | packet `8156bc4`

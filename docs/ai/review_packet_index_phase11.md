@@ -1,5 +1,9 @@
 # Phase 11 Review Packet Index
 
+## External Upload Bundle
+- Upload facade: `docs/ai/UPLOAD_BUNDLE_PHASE10-11.md`
+- Optional mega packet: `docs/ai/review_packet_bundle_phase10-11_docs.md`
+
 ## Primary Packets
 - `docs/ai/review_packet_phase11a.md` | branch `refactor/phase11a-scanner-scaffolding` | phase_end `31b75b4` | packet `fc79b21`
 - `docs/ai/review_packet_phase11b.md` | branch `refactor/phase11b-scanner-validate-normalize` | phase_end `d2ff787` | packet `657d5da`
