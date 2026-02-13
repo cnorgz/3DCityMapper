@@ -71,3 +71,4 @@ A “blank” blueprint is created by normalizing an empty object `{}` via the s
 - Current scanner scaffolding produces a placeholder DraftBlueprint first.
 - That DraftBlueprint is validated and normalized through existing pipeline hooks before becoming active BlueprintModel data.
 - This remains descriptive only; no new scanner inference requirements are introduced here.
+- Scanner MVP output tiers (Tier 0/1/2) are documented in `docs/SCANNER_DECISIONS.md`.

@@ -25,3 +25,4 @@
 - Probe checks that runtime mapping remains consistent after refactor extraction.
 - This document defines contracts and terms only; it does not promise specific implementation internals.
 - See `docs/SCANNER.md` for current OverlayMeta fields used to carry normalized/original image dimensions into scanner plumbing.
+- See `docs/SCANNER_DECISIONS.md` for scanner-tier decisions that depend on normalized overlay coordinates.

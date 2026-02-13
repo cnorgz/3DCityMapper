@@ -25,6 +25,11 @@ Policy: NO ZIP uploads by default. Use markdown bundles.
   - Minimal upload set: `REFACTOR_LOG.md` + `docs/ai/UPLOAD_BUNDLE_MASTER.md` + `docs/ai/UPLOAD_BUNDLE_PHASE12.md`
   - Optional deep evidence: `docs/ai/review_packet_phase12.md`
 
+- `docs/ai/UPLOAD_BUNDLE_PHASE14.md`
+  - Coverage: scanner-question decisions resolved in docs + integration routing updates.
+  - Minimal upload set: `REFACTOR_LOG.md` + `docs/ai/UPLOAD_BUNDLE_MASTER.md` + `docs/ai/UPLOAD_BUNDLE_PHASE14.md`
+  - Optional deep evidence: `docs/ai/review_packet_phase14.md`
+
 ## Default Recommendation
 For SeniorDev handoffs, upload:
 1. `REFACTOR_LOG.md`

@@ -13,11 +13,16 @@
 
 Source of truth: `REFACTOR_LOG.md`.
 
-## Deferred (Plan Section 10 — Scanner Questions)
-From `REFACTOR_EXECUTION_PLAN_TIGHT_v7_rev4.md`, explicitly deferred:
-1. Canonical legend colors/symbols per feature type.
-2. OCR vs symbol markers for labels.
-3. MVP scan scope (roads-only vs roads+water vs full zones/buildings).
+## Resolved (Docs) — Scanner Questions
+Resolved in docs via `docs/SCANNER_DECISIONS.md`:
+1. Canonical legend colors/symbols per feature type (Canon v0).
+2. OCR vs symbol marker strategy for MVP.
+3. Tiered MVP scan scope (Tier 0/1/2).
+
+## Next Steps (Non-Blocking)
+- Implement legend and marker parsing in scanner runtime modules.
+- Add confidence/error telemetry for unresolved scan candidates.
+- Keep parity-gated validation active while moving from placeholder to inference.
 
 ## What To Upload For Review
 Use the 3-file rule:

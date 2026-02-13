@@ -851,3 +851,12 @@ Probe check (post-extraction):
 - overlayDrift: { ok: true, epsPx: 0.05, maxDriftPx: 0 }
 - rendererInfo: { memory: { geometries: 436, textures: 3 }, render: { calls: 626, triangles: 22614, lines: 0, points: 0 } }
 - parity_decision: PASS (tracked fields unchanged and drift within epsPx=0.05)
+
+## Phase 14 – Scanner Questions Decisions (docs)
+
+- branch: refactor/phase14-scanner-questions-decisions-doc
+- base_commit: f15e86b
+- phase_end_commit: PENDING
+- packet_commit: PENDING
+- capture_method: n/a (docs/tooling-only)
+- probe: NOT RUN (docs-only)

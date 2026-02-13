@@ -29,6 +29,10 @@
 - `src/scanner/DraftBlueprintBuilder.js`
 - `src/config/legendRules.js` (and scanner compatibility re-export path)
 
+## Decisions
+- Scanner decisions/spec baseline: `docs/SCANNER_DECISIONS.md`
+- This decisions doc resolves deferred legend/label/scope questions without changing runtime behavior.
+
 ## Deferred Items (Not Built Yet)
 - Legend extraction from uploaded map legend images.
 - OCR/classification for labels and symbols.
