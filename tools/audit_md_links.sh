@@ -2,7 +2,39 @@
 set -euo pipefail
 
 repo_root="$(git rev-parse --show-toplevel)"
-out_file="${1:-docs/ai/audit_md_links_phase12.txt}"
+out_file="/tmp/audit_md_links.txt"
+
+usage() {
+  echo "Usage:"
+  echo "  bash tools/audit_md_links.sh [--out <path>]"
+  echo "  bash tools/audit_md_links.sh [<path>]"
+}
+
+if [[ $# -gt 0 ]]; then
+  case "$1" in
+    --out)
+      if [[ $# -lt 2 ]]; then
+        usage
+        exit 2
+      fi
+      out_file="$2"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      out_file="$1"
+      shift
+      ;;
+  esac
+fi
+
+if [[ $# -gt 0 ]]; then
+  usage
+  exit 2
+fi
 
 cd "$repo_root"
 
