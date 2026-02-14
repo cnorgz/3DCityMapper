@@ -3,6 +3,7 @@
 Central index of upload-friendly markdown bundle docs.
 Policy: NO ZIP uploads by default. Use markdown bundles.
 Latest scope bundle: `docs/ai/UPLOAD_BUNDLE_PHASE15_FINAL.md`.
+Where to start (Codex): `docs/ai/CODEX_README.md` then `docs/ai/ACTIVE_DOCS.md`.
 
 Archive note:
 - Historical bundles and packet evidence moved to `docs/ai/archive/` to reduce iteration/search noise.
